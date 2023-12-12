@@ -1,0 +1,17 @@
+desc: The stack uploads values into aws ssm parameter store
+release: 0.0.1
+categories: 
+   - aws
+   - ec2
+   - secrets
+   - cloud
+   - public_cloud
+tags:
+   - ssm
+   - parameter
+   - parameter_store
+   - ec2
+   - secrets
+   - host
+   - aws
+   - infrastructure

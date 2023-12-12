@@ -1,0 +1,146 @@
+{
+  "version": 4,
+  "terraform_version": "0.14.6",
+  "serial": 61,
+  "lineage": "679fb8e8-885d-b665-14ac-93d6fdb75d08",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_iam_policy",
+      "name": "lambda",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::109602745235:policy/test-lambda-lambda-iam-policy",
+            "description": "Policy for Lambda Role test-lambda-lambda-role",
+            "id": "arn:aws:iam::109602745235:policy/test-lambda-lambda-iam-policy",
+            "name": "test-lambda-lambda-iam-policy",
+            "name_prefix": null,
+            "path": "/",
+            "policy": "{\n \"Version\": \"2012-10-17\",\n \"Statement\": [\n   {\n     \"Action\": [\n       \"logs:CreateLogGroup\",\n       \"logs:CreateLogStream\",\n       \"logs:PutLogEvents\"\n     ],\n     \"Resource\": \"arn:aws:logs:*:*:*\",\n     \"Effect\": \"Allow\"\n   }\n ]\n}\n"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA=="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "lambda",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::109602745235:role/test-lambda-lambda-role",
+            "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"lambda.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+            "create_date": "2022-03-23T14:02:50Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "test-lambda-lambda-role",
+            "max_session_duration": 3600,
+            "name": "test-lambda-lambda-role",
+            "name_prefix": null,
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": null,
+            "unique_id": "AROARTBGVCK55N4QL2WU2"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA=="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy_attachment",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "test-lambda-lambda-role-20220323140253639800000001",
+            "policy_arn": "arn:aws:iam::109602745235:policy/test-lambda-lambda-iam-policy",
+            "role": "test-lambda-lambda-role"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_policy.lambda",
+            "aws_iam_role.lambda"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_lambda_function",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:lambda:eu-west-1:109602745235:function:test-lambda",
+            "dead_letter_config": [],
+            "description": "",
+            "environment": [
+              {
+                "variables": {
+                  "ENV": "test",
+                  "GIT_URL": "fake-giturl"
+                }
+              }
+            ],
+            "filename": null,
+            "function_name": "test-lambda",
+            "handler": "app.handler",
+            "id": "test-lambda",
+            "invoke_arn": "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/arn:aws:lambda:eu-west-1:109602745235:function:test-lambda/invocations",
+            "kms_key_arn": "",
+            "last_modified": "2022-03-23T14:03:01.306+0000",
+            "layers": [
+              "arn:aws:lambda:eu-west-1:553035198032:layer:git-lambda2:8"
+            ],
+            "memory_size": 256,
+            "publish": true,
+            "qualified_arn": "arn:aws:lambda:eu-west-1:109602745235:function:test-lambda:4",
+            "reserved_concurrent_executions": -1,
+            "role": "arn:aws:iam::109602745235:role/test-lambda-lambda-role",
+            "runtime": "python3.8",
+            "s3_bucket": "flask-sample-private-codebuild-ci",
+            "s3_key": "test-lambda.zip",
+            "s3_object_version": null,
+            "source_code_hash": "udIzIo8ECmcjBVfSdTX7uzge/ZzTVEEVgscZrCNJPj4=",
+            "source_code_size": 23182005,
+            "tags": {
+              "Product": "lambda",
+              "yo": "mama"
+            },
+            "timeout": 900,
+            "timeouts": null,
+            "tracing_config": [
+              {
+                "mode": "PassThrough"
+              }
+            ],
+            "version": "4",
+            "vpc_config": []
+          },
+          "sensitive_attributes": [],
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMDB9fQ==",
+          "dependencies": [
+            "aws_iam_policy.lambda",
+            "aws_iam_role.lambda",
+            "aws_iam_role_policy_attachment.default"
+          ]
+        }
+      ]
+    }
+  ]
+}

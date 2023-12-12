@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+#
+
+import os
+
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.serialization import b64_decode
+from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
+
+class CodebuildShellout:
+
+    def __init__(self):  
+
+        self.classname = 'CodebuildShellout'
+
+        self.logger = Config0Logger(self.classname,
+                                    logcategory="cloudprovider")
+
+        if "CONFIG0_BUILDPARMS_HASH" not in os.environ:
+            raise Exception("CONFIG0_BUILDPARMS_HASH needs to be set as an env var")
+
+        config0_buildparams = b64_decode(os.environ["CONFIG0_BUILDPARMS_HASH"])
+        self.buildparams = config0_buildparams.get("buildparams")
+
+        if not self.buildparams:
+            raise Exception("buildparams not found in CONFIG0_BUILDPARMS_HASH")
+
+    def run(self):
+
+        if not self.buildparams:
+            raise Exception("buildparams need to be provided for Codebuild shellout")
+
+        codebuild_helper = CodebuildResourceHelper(set_env_vars=None,
+                                                   **self.buildparams)
+        codebuild_helper.run()
+
+        if codebuild_helper.results.get("status") is False:
+            self.logger.error("codebuild failed:")
+            exit(9)
+
+        exit(0)
+
+if __name__ == "__main__":
+
+    main = CodebuildShellout()
+    main.run()

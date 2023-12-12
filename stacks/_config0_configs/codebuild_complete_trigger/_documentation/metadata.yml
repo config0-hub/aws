@@ -1,0 +1,12 @@
+desc: The stack connects triggers lambda when any codebuild completes.
+release: 0.0.1
+categories: 
+   - aws
+   - cloud
+   - public_cloud
+tags:
+   - cloudwatch
+   - codebuild
+   - aws
+   - lambda
+   - sns

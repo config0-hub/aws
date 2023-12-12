@@ -1,0 +1,239 @@
+#!/usr/bin/env python
+#
+
+import os
+import json
+import sys
+from time import sleep
+from ast import literal_eval
+
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.resource_manage import ResourceCmdHelper
+from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
+from config0_publisher.serialization import b64_decode
+from config0_publisher.serialization import b64_encode
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.utilities import id_generator
+from config0_publisher.fileutils import targz
+
+class CodebuildSrcFile(ResourceCmdHelper):
+
+    def __init__(self):  
+
+        self.classname = 'CodebuildSrcFile'
+
+        self.logger = Config0Logger(self.classname,
+                                    logcategory="cloudprovider")
+
+        try:
+            config0_buildparams = b64_decode(os.environ["CONFIG0_BUILDPARMS_HASH"])
+        except:
+            config0_buildparams = None
+
+        if config0_buildparams:
+            self.build_inputargs = config0_buildparams.get("inputargs")
+            self.build_env_vars = config0_buildparams.get("env_vars")
+            self.build_variables = config0_buildparams.get("set_variables")
+        else:
+            self.build_variables = None
+            self.build_inputargs = None
+            self.build_env_vars = None
+
+        if not self.build_variables:
+            self.build_variables=["buildspec_hash"]
+        else:
+            self.build_variables.append("buildspec_hash")
+
+        self.app_name = self.build_inputargs.get("app_name")
+
+        if not self.app_name:
+            self.app_name = self.build_env_vars.get("APP_NAME")
+
+        if not self.app_name:
+            raise Exception('ResourceCmdHelper: "app_name" needs to be set')
+
+        self.app_dir = self.build_inputargs.get("app_dir")
+
+        if not self.app_dir:
+            self.app_dir = self.build_env_vars.get("APP_DIR")
+
+        # testtest456
+        ResourceCmdHelper.__init__(self,
+                                   app_name=self.app_name,
+                                   app_dir=self.app_dir,
+                                   inputargs=self.build_inputargs,
+                                   set_env_vars=self.build_env_vars,
+                                   set_variables=self.build_variables,
+                                   set_must_exists=["tmp_bucket",
+                                                    "upload_bucket",
+                                                    "log_bucket"],
+                                   set_default_values={ "codebuild_basename":"config0-iac",
+                                                        "build_image":"aws/codebuild/standard:4.0",
+                                                        "build_timeout":3600,
+                                                        "compute_type":"BUILD_GENERAL1_SMALL",
+                                                        "image_type":"LINUX_CONTAINER",
+                                                        "remote_stateful_bucket":None,
+                                                        "upload_bucket":None,
+                                                        "stateful_id":None,
+                                                        "buildspec_file":"buildspec.yml"})
+
+        if not self.stateful_id:
+            self.stateful_id = id_generator(10, 
+                                            chars=string.ascii_lowercase)
+
+            self.logger.warn("creating random stateful_id {}".format(self.stateful_id))
+
+    def _get_abs_app_dir_path(self):
+
+        self.list_files_share_dir()
+        self.list_files_exec_dir()
+
+        return os.path.join(self.share_dir,
+                            self.stateful_id,
+                            self.app_dir)
+
+    def list_files_share_dir(self):
+
+        self.logger.debug("#"*32)
+        self.logger.debug("# share_dir {}".format(self.share_dir))
+        self.list_files(self.share_dir)
+        self.logger.debug("#"*32)
+
+    def list_files_exec_dir(self):
+
+        self.logger.debug("#"*32)
+        self.logger.debug("# exec_dir {}".format(self.exec_dir))
+        self.list_files(self.exec_dir)
+        self.logger.debug("#"*32)
+
+    @staticmethod
+    def list_files(directory):
+
+        files = os.listdir(directory)
+
+        for file in files:
+
+            if not os.path.isfile(os.path.join(directory, file)):
+                continue
+
+            print(file)
+
+    def get_buildspec(self):
+
+        # get with provided b64 hash
+        if self.buildspec_hash:
+            return b64_decode(self.buildspec_hash)
+
+        # get repo file and read contents
+        abs_app_dir = self._get_abs_app_dir_path()
+
+        buildspec_file = os.path.join(abs_app_dir,
+                                      "src",
+                                      self.buildspec_file)
+
+        with open(buildspec_file, "r") as file:
+            file_contents = file.read()
+
+        return file_contents
+
+    def _set_build_env_vars(self):
+
+        if not self.build_env_vars:
+            self.build_env_vars = {}
+
+        self.build_env_vars["TMPDIR"] = self.tmpdir
+        self.build_env_vars["SHARE_DIR"] = self.share_dir
+        self.build_env_vars["BUILD_TIMEOUT"] = self.build_timeout
+        self.build_env_vars["APP_DIR"] = self.app_dir
+        self.build_env_vars["APP_NAME"] = self.app_name
+        self.build_env_vars["STATEFUL_ID"] = self.stateful_id
+        self.build_env_vars["RUN_SHARE_DIR"] = self.run_share_dir
+        self.build_env_vars["TMP_BUCKET"] = self.tmp_bucket
+        self.build_env_vars["LOG_BUCKET"] = self.log_bucket
+
+        # remote stateful bucket set to tmp bucket
+        # as temporary location for codebuild to retrieve execution files
+        if self.remote_stateful_bucket:
+            self.build_env_vars["UPLOAD_BUCKET"] = self.remote_stateful_bucket
+        else:
+            self.build_env_vars["UPLOAD_BUCKET"] = self.tmp_bucket
+
+        if self.docker_image:
+            self.build_env_vars["DOCKER_IMAGE"] = self.docker_image
+
+        # remote stateful bucket set to tmp bucket
+        # as temporary location for codebuild to retrieve execution files
+        if self.remote_stateful_bucket:
+            self.build_env_vars["UPLOAD_BUCKET"] = self.remote_stateful_bucket
+        else:
+            self.build_env_vars["UPLOAD_BUCKET"] = self.tmp_bucket
+
+    def _tar_upload_s3(self):
+
+        abs_app_dir = self._get_abs_app_dir_path()
+
+        targz(abs_app_dir,
+              self.tmpdir,
+              self.stateful_id)
+
+        cmd = "aws s3 cp {tmpdir}/{stateful_id}.tar.gz s3://{upload_bucket}/{stateful_id}".format(tmpdir=self.tmpdir,
+                                                                                                  upload_bucket=self.buildparams["build_env_vars"]["UPLOAD_BUCKET"],
+                                                                                                  stateful_id=self.stateful_id)
+
+        return self.execute(cmd)
+
+    def _set_inputargs(self):
+
+        self._set_build_env_vars()
+
+        self.buildparams = {"buildspec":self.get_buildspec(),
+                            "codebuild_basename":self.codebuild_basename,
+                            "build_timeout":self.build_timeout}
+
+        if self.build_env_vars:
+            self.buildparams["build_env_vars"] = self.build_env_vars
+
+        if self.compute_type:
+            self.buildparams["compute_type"] = self.compute_type
+
+        if self.image_type:
+            self.buildparams["image_type"] = self.image_type
+
+        if self.build_image:
+            self.buildparams["build_image"] = self.build_image
+
+        return self.buildparams
+
+    def run(self):
+
+        self._set_inputargs()
+        self._tar_upload_s3()
+
+        # testtest456
+        _set_env_vars = { "stateful_id":True,
+                          "tmp_bucket":True,
+                          "log_bucket":True,
+                          "app_dir":True,
+                          "remote_stateful_bucket":None,
+                          "upload_bucket":True,
+                          "run_share_dir":None,
+                          "share_dir":None }
+
+        codebuild_helper = CodebuildResourceHelper(set_env_vars=_set_env_vars,
+                                                   **self.buildparams)
+        codebuild_helper.run()
+
+        if codebuild_helper.results.get("output"):
+            self.append_log(codebuild_helper.results["output"])
+            del codebuild_helper.results["output"]
+
+        if codebuild_helper.results.get("status") is False:
+            self.logger.error("codebuild failed:")
+            exit(9)
+
+        exit(0)
+
+if __name__ == "__main__":
+
+    main = CodebuildSrcFile()
+    main.run()

@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+
+import os
+import json
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.serialization import b64_encode
+
+terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")
+
+with open(terraform_state_file) as json_file:
+    data = json.load(json_file)
+
+if not data:
+    print("ERROR - there is no data from {}".format(os.path.join(os.getcwd(),terraform_state_file)))
+    exit(9)
+
+name = data["resources"][0]["instances"][0]["attributes"]["key_name"]
+
+results = {"name":name}
+results["name"] = name
+results["resource_type"] = "ssh_public_key"
+results["provider"] = "ec2"
+results["main"] = True
+results["key_pair_id"] = data["resources"][0]["instances"][0]["attributes"]["key_pair_id"]
+results["_id"] = data["resources"][0]["instances"][0]["attributes"]["key_pair_id"]
+results["id"] = data["resources"][0]["instances"][0]["attributes"]["key_pair_id"]
+results["fingerprint"] = data["resources"][0]["instances"][0]["attributes"]["fingerprint"]
+results["key_name"] = data["resources"][0]["instances"][0]["attributes"]["key_name"]
+results["tags"] = [ results["_id"], name ]
+
+# changed 45234532 - moved over to b64 hash
+results["raw"] = {"terraform":b64_encode(data)}
+
+# ref 34532045732
+to_jsonfile(results,"output.json")

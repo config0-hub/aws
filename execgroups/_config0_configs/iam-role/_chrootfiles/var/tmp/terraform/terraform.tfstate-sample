@@ -1,0 +1,96 @@
+{
+  "version": 4,
+  "terraform_version": "0.14.6",
+  "serial": 4,
+  "lineage": "4e725b82-4793-01cb-0407-7a75246a3a12",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_iam_instance_profile",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::109602738875:instance-profile/eval-config0-ec2",
+            "create_date": "2022-01-21T12:40:53Z",
+            "id": "eval-config0-ec2",
+            "name": "eval-config0-ec2",
+            "name_prefix": null,
+            "path": "/",
+            "role": "eval-config0-ec2",
+            "tags": null,
+            "tags_all": {},
+            "unique_id": "AIPARTBGVCK5YSSBT4RVN"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::109602738875:role/eval-config0-ec2",
+            "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+            "create_date": "2022-01-21T12:40:45Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "eval-config0-ec2",
+            "inline_policy": [
+              {
+                "name": "",
+                "policy": ""
+              }
+            ],
+            "managed_policy_arns": [],
+            "max_session_duration": 3600,
+            "name": "eval-config0-ec2",
+            "name_prefix": "",
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": null,
+            "tags_all": {},
+            "unique_id": "AROARTBGVCK55IZ3V2I56"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA=="
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "eval-config0-ec2:eval-config0-ec2",
+            "name": "eval-config0-ec2",
+            "name_prefix": null,
+            "policy": "{\"Version\": \"2012-10-17\", \"Statement\": [{\"Action\": [\"s3:*\", \"ecr:*\", \"ec2:*\", \"ssm:*\", \"eks:*\", \"rds:*\", \"dynamodb:*\"], \"Resource\": \"*\", \"Effect\": \"Allow\"}]}",
+            "role": "eval-config0-ec2"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default"
+          ]
+        }
+      ]
+    }
+  ]
+}

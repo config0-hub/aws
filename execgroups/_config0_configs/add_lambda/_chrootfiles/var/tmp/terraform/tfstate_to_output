@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+
+import os
+import json
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.serialization import b64_encode
+
+terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")
+terraform_resource_type = os.environ.get("TERRAFORM_RESOURCE_TYPE","aws_lambda_function").strip()
+config0_resource_type = os.environ.get("RESOURCE_TYPE","aws_lambda")
+
+with open(terraform_state_file) as json_file:
+    data = json.load(json_file)
+
+with open(terraform_state_file) as json_file:
+    raw = json.load(json_file)
+
+if not data:
+    print("ERROR - there is no data from {}".format(os.path.join(os.getcwd(),terraform_state_file)))
+    exit(9)
+
+results = {}
+
+keys_to_pass = [ "function_name",
+                 "handler",
+                 "invoke_arn",
+                 "arn",
+                 "layers",
+                 "memory_size",
+                 "role",
+                 "runtime",
+                 "s3_bucket",
+                 "s3_key",
+                 "timeout" ]
+
+for resource in data["resources"]:
+    for instance in resource["instances"]:
+
+        _type = resource["type"]
+        if _type != terraform_resource_type: continue
+
+        results = {"terraform_resource_type":terraform_resource_type}
+
+        for _key in resource["instances"][0]["attributes"].keys():
+            if _key not in keys_to_pass: continue
+            results[_key] = resource["instances"][0]["attributes"][_key]
+
+        results["_id"] = results["arn"]
+        results["id"] = results["arn"]
+        results["name"] = results["function_name"]
+
+        try:
+            results["region"] = results["arn"].split(":")[3]
+        except:
+            results["region"] = None
+
+        results["resource_type"] = config0_resource_type
+
+        if not results.get("region") and os.environ.get("AWS_DEFAULT_REGION"): 
+            region = os.environ["AWS_DEFAULT_REGION"]
+            results["region"] = region
+            results["aws_default_region"] = region
+
+        # changed 45234532 - moved over to b64 hash
+        results["raw"] = {"terraform":b64_encode(raw)}
+
+        break
+
+# ref 34532045732
+to_jsonfile(results,"resource.json")

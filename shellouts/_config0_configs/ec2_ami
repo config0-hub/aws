@@ -1,0 +1,411 @@
+#!/usr/bin/env python
+
+import json
+import sys
+from time import sleep
+
+from config0_publisher.utilities import id_generator
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.cloud.awscli import AwsCli
+
+class Main(AwsCli):
+
+    def __init__(self,**kwargs):
+
+        AwsCli.__init__(self)
+        self.classname = 'Ec2Image'
+        self.logger = Config0Logger(self.classname,logcategory="cloudprovider")
+        self.logger.debug("Instantiating %s" % self.classname)
+
+        #aws ec2 copy-image --source-image-id ami-5731123e --source-region us-east-1 --region ap-northeast-1 --name "My server" --encrypted
+
+        self.base_cmd = "aws ec2"
+        self.product = "ec2"
+        self.provider = "ec2"
+        self.itype = "ami"
+        self.shelloutconfig = "config0-hub:::aws::ec2_ami"
+
+    def exists(self,**kwargs):
+
+        #aws ec2 describe-images --image-ids ami-5731123e
+        #aws ec2 describe-images --owners self --filters "Name=platform,Values=windows" "Name=root-device-type,Values=ebs"
+        #aws ec2 describe-images --owners self --filters "Name=name,Values=test"
+        #aws ec2 describe-images --owners self --image-id ami-029a44a086f5bf3bc
+
+        name = kwargs.get("name")
+        image_id = kwargs.get("image_id")
+        region = kwargs.get("region")
+
+        add_cmd = "describe-images"
+        if not image_id: add_cmd = "{} --owners self".format(add_cmd)
+
+        output_to_json = kwargs.get("output_to_json",True)
+
+        results = {"status":True}
+
+        _cmd = "{} {}".format(self.base_cmd,add_cmd)
+
+        if image_id: 
+            _cmd = '{} --image-id {}'.format(_cmd,image_id)
+        elif name: 
+            _cmd = '{} --filters "Name=name,Values={}"'.format(_cmd,name)
+
+        if region: 
+            cmd = "{} --region {}".format(_cmd,region)
+        else:
+            cmd = self.get_cmd_region(_cmd)
+
+        results = self.execute(cmd,output_to_json=output_to_json,exit_error=False)
+
+        return results
+
+    def get(self):
+
+        results = self.exists(**self.inputargs)
+
+        if results.get("status") is None: 
+            exit(0)
+
+        if results.get("status") is False: 
+            self.cmd_failed(**self.inputargs)
+
+        images = results["output"]["Images"]
+
+        self.successful_output(output=images)
+
+    def make_public(self,**kwargs):
+
+        image_id = self.inputargs["image_id"]
+        permission = 'Add=[{Group=all}]'
+        add_cmd = "modify-image-attribute --image-id {} --launch-permission '{}'".format(image_id,permission)
+
+        #permission = json.dumps({"Add":[{"Group":"all"}]})
+        #add_cmd = "modify-image-attribute --image-id {} --launch-permission {}".format(image_id,permission)
+
+        _cmd = "{} {}".format(self.base_cmd,add_cmd)
+        cmd = self.get_cmd_region(_cmd)
+        results = self.execute(cmd,output_to_json=None)
+        if results.get("status") is not True: return False
+        return True
+
+    def _get_snapshot_ids(self,image_info):
+
+        snapshot_ids = []
+
+        if not image_info.get("BlockDeviceMappings"): return
+
+        for block in image_info["BlockDeviceMappings"]:
+            snapshot_id = None
+            try:
+                snapshot_id = block["Ebs"]["SnapshotId"]
+            except:
+                snapshot_id = None
+
+            snapshot_ids.append(snapshot_id)
+
+        return snapshot_ids
+
+    def copy(self):
+
+        name = self.inputargs.get("name")
+
+        if not name: 
+            name = id_generator(size=24)
+
+        #aws ec2 copy-image --source-image-id ami-0146901d370b130a6 --source-region us-east-1 --region us-east-1 --name "test" --encrypted
+
+        description = self.inputargs.get("description")
+        encrypted = self.inputargs.get("encrypted")
+
+        src_image_id = self.inputargs["src_image_id"]
+        src_region = self.inputargs["src_region"]
+        dst_region = self.inputargs["dst_region"]
+
+        add_cmd = "copy-image"
+
+        cmd = "{} {} --source-image-id {} --source-region {} --region {} --name {}".format(self.base_cmd,
+                                                                                           add_cmd,
+                                                                                           src_image_id,
+                                                                                           src_region,
+                                                                                           dst_region,
+                                                                                           name)
+
+        if encrypted: 
+            cmd = "{} --encrypted".format(cmd)
+
+        if description: 
+            cmd = "{} --description {}".format(cmd,description)
+
+        self.logger.debug(cmd)
+
+        init_output = self.execute(cmd,output_to_json=True,exit_error=True)["output"]
+        image_id = init_output["ImageId"]
+
+        self.logger.debug(init_output)
+
+        resource = self.get_results(name,image_id,region=dst_region)
+
+        self.write_resource_to_json_file(resource)
+
+        return 
+
+    def _create_unencrypted(self,name):
+
+        description = self.inputargs.get("description")
+        instance_id = self.inputargs["instance_id"]
+
+        add_cmd = "create-image"
+        _cmd = "{} {} --instance-id {} --name {}".format(self.base_cmd,add_cmd,instance_id,name)
+        if description: _cmd = "{} --description {}".format(_cmd,description)
+        cmd = self.get_cmd_region(_cmd)
+        init_output = self.execute(cmd,output_to_json=True,exit_error=True)["output"]
+
+        return init_output["ImageId"]
+
+    def get_results(self,name,image_id,region=None):
+
+        label = self.inputargs["label"]
+        confirm = self.inputargs.get("confirm")
+
+        if not region: 
+            region = self.aws_default_region
+
+        image_info = self.exists(output_to_json=True,image_id=image_id,region=region)["output"]["Images"][0]
+
+        tags = [ self.itype, self.product, self.provider, name, label ]
+
+        results = {"raw":{}}
+        results["raw"][self.product] = image_info
+        # The image is usually a unique reference
+        # where as the image_id may or may not be
+        # unique.  We make them equal here
+        results["image"] = image_id
+        results["image_id"] = image_id
+        results["_id"] = image_id
+        results["id"] = image_id
+        results["itype"] = self.itype
+        results["product"] = self.product
+        results["provider"] = self.provider
+        results["region"] = region
+        results["aws_default_region"] = region
+
+        results["tags"] = tags
+        results["name"] = name
+        results["label"] = label
+
+        results["destroy"] = {"shelloutconfig":self.shelloutconfig}
+        results["destroy"]["env_vars"] = json.dumps({"IMAGE_ID":image_id,"METHOD":"destroy","AWS_DEFAULT_REGION":region})
+
+        if confirm: 
+            self.confirm_available(image_id,wait=True)
+
+        return results
+
+    def create(self):
+
+        #aws ec2 create-image --instance-id i-1234567890abcdef0 --name "My server" --description "An AMI for my server"
+        name = self.inputargs.get("name")
+
+        if not name: 
+            name = id_generator(size=24)
+
+        image_id = self._create_unencrypted(name)
+
+        resource = self.get_results(name,image_id)
+
+        self.write_resource_to_json_file(resource)
+
+        return 
+
+    def _confirm_available(self,image_id):
+
+        state = self.exists(output_to_json=True,image_id=image_id)["output"]["Images"][0]["State"]
+        self.logger.debug("The state of the image is {}".format(state))
+        if state == "available": return True
+
+        return False
+
+    def confirm_available(self,image_id=None,wait=None,exit_error=None):
+
+        # self.ehandle.WaitOrdersComplete(get_exitcode=True)
+        exitcode = 100 + 32
+
+        if not image_id: image_id = self.inputargs["image_id"]
+
+        if not wait: 
+            status = self._confirm_available(image_id)
+            if status is False and exit_error: exit(exitcode)
+            if status is False: return False
+            return True
+
+        while True:
+            status = self._confirm_available(image_id)
+            if status is True: return True
+            sleep(3)
+
+    def _delete_snapshot_id(self,snapshot_id):
+
+        add_cmd = "delete-snapshot --snapshot-id {}".format(snapshot_id)
+        _cmd = "{} {}".format(self.base_cmd,add_cmd)
+        cmd = self.get_cmd_region(_cmd)
+        return self.execute(cmd,output_to_json=True,exit_error=False)
+
+    def destroy(self,image_id=None):
+
+        #aws ec2 deregister-image --image-id ami-4fa54026
+        #aws --region "$region" ec2 delete-snapshot --snapshot-inputargsd "$SNAPSHOT_ID" > /dev/null; then
+
+        if not image_id: image_id = self.inputargs["image_id"]
+
+        try:
+            image_info = self.exists(output_to_json=True,image_id=image_id)["output"]["Images"][0]
+        except:
+            image_info = None
+
+        if not image_info:
+            output = '{} image_id = "{}" in "{}" does not exists'.format(self.product,
+                                                                         self.inputargs.get("image_id"),
+                                                                         self.aws_default_region)
+            self.successful_output(output=output)
+
+        add_cmd = "deregister-image"
+        _cmd = "{} {} --image-id {}".format(self.base_cmd,add_cmd,image_id)
+        cmd = self.get_cmd_region(_cmd)
+        self.execute(cmd,output_to_json=None)
+
+        msg = '{} image_id "{}" destroyed in {}'.format(self.product,image_id,self.aws_default_region)
+        self.logger.debug(msg)
+        snapshot_ids = self._get_snapshot_ids(image_info)
+
+        remove_snapshots_ids = []
+
+        if snapshot_ids:
+            for snapshot_id in snapshot_ids:
+                try:
+                    snap_id = str(snapshot_id)
+                except:
+                    snap_id = None
+
+                if not snap_id: continue
+                if snap_id == "None": continue
+
+                self.logger.debug("deleting snapshot id {}".format(snap_id))
+                self._delete_snapshot_id(snap_id)
+                remove_snapshots_ids.append(snap_id)
+
+        return self.successful_output(output={"msg":msg,"remove_snapshots_ids":remove_snapshots_ids})
+
+def usage():
+
+    print("""
+script + environmental variables
+
+or
+
+script + json_input (as argument)
+
+environmental variables:
+    basic:
+        AWS_ACCESS_KEY_ID  
+        AWS_SECRET_ACCESS_KEY
+        METHOD
+        AWS_DEFAULT_REGION (optional)
+
+    confirm:
+        IMAGE_ID
+
+    make_public:
+        IMAGE_ID
+
+    copy:
+        SRC_IMAGE_ID
+        SRC_REGION
+        DST_REGION
+        ENCRYPTED
+        NAME (optional)
+        CONFIRM (optional)
+
+    create:
+        LABEL
+        INSTANCE_ID
+        CONFIRM (optional)
+        NAME (optional)
+
+    destroy:
+        IMAGE_ID
+
+    get:
+        NAME (optional)
+        IMAGE_ID (optional)
+
+       """)
+    exit(4)
+
+if __name__ == '__main__':
+
+    try:
+        json_input = sys.argv[1]
+    except:
+        json_input = None
+
+    main = Main()
+
+    if json_input:
+        main.set_inputargs(json_input=json_input)
+    else:
+        set_env_vars = [ "name",
+                         "confirm",
+                         "src_image_id",
+                         "src_region",
+                         "dst_region",
+                         "label",
+                         "encrypted",
+                         "public",
+                         "instance_id",
+                         "image_id",
+                         "aws_default_region" ]
+
+        main.set_inputargs(set_env_vars=set_env_vars)
+   
+    method = main.inputargs.get("method")
+
+    if not method:
+        print("method/ENV VARIABLE METHOD is needed")
+        exit(4)
+
+    # Set class and region
+    main.get_region()
+
+    if method == "create":
+
+        main.check_required_inputargs(keys=["instance_id","label"])
+        main.create()
+
+    elif method == "confirm":
+    
+        main.check_required_inputargs(keys=["image_id"])
+        main.confirm_available(wait=False,exit_error=True)
+
+    elif method == "make_public":
+    
+        main.check_required_inputargs(keys=["image_id"])
+        main.make_public()
+
+    elif method == "destroy":
+    
+        main.check_required_inputargs(keys=["image_id"])
+        main.destroy()
+
+    elif method == "copy":
+    
+        main.check_required_inputargs(keys=["src_image_id","src_region","dst_region"])
+        main.copy()
+
+    elif method == "get":
+        main.get()
+
+    else:
+        usage()
+        print('method "{}" not supported!'.format(method))
+        exit(4)
+

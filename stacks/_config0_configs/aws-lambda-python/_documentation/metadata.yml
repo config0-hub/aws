@@ -1,0 +1,13 @@
+desc: Creates python lambda function to aws.
+release: 0.0.1
+categories: 
+   - aws
+   - cloud
+   - public_cloud
+tags:
+   - lambda
+   - config0_core
+   - config0_saas
+   - config0
+   - aws
+   - infrastructure

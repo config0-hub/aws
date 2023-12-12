@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+import os
+import json
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.serialization import b64_encode
+
+#from config0_publisher.utilities import print_json
+
+terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")
+
+with open(terraform_state_file) as json_file:
+    data = json.load(json_file)
+
+if not data:
+    print("ERROR - there is no data from {}".format(os.path.join(os.getcwd(),terraform_state_file)))
+    exit(9)
+
+name = data["resources"][0]["name"]
+
+results = {"name":name}
+results["resource_type"] = "attach_volume"
+results["provider"] = "aws"
+results["main"] = True
+
+# changed 45234532 - moved over to b64 hash
+results["raw"] = {"terraform":b64_encode(data)}
+
+results["_id"] = data["resources"][0]["instances"][0]["attributes"]["id"]
+results["instance_id"] = data["resources"][0]["instances"][0]["attributes"]["instance_id"]
+results["ec2_instance_id"] = data["resources"][0]["instances"][0]["attributes"]["instance_id"]
+results["tags"] = [ results["instance_id"], 
+                    name,
+                    "attach_volume" ]
+
+if os.environ.get("TF_VAR_aws_default_region"): 
+    region = os.environ["TF_VAR_aws_default_region"]
+elif os.environ.get("AWS_DEFAULT_REGION"): 
+    region = os.environ["AWS_DEFAULT_REGION"]
+else:
+    region = None
+
+if region:
+    results["region"] = region
+    results["aws_default_region"] = region
+
+# ref 34532045732
+to_jsonfile(results,"ec2_keypair.json")

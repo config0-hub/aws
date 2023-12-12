@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+
+import os
+import json
+from config0_publisher.resource_manage import to_jsonfile
+
+terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")
+
+with open(terraform_state_file) as json_file:
+    data = json.load(json_file)
+
+if not data:
+    print("ERROR - there is no data from {}".format(os.path.join(os.getcwd(),terraform_state_file)))
+    exit(9)
+
+aws_type = os.environ.get("AWS_TYPE","aws_iam_access_key")
+resource_type = "credentials"
+provider = "aws"
+
+for resource in data["resources"]:
+    for instance in resource["instances"]:
+
+        if resource["type"] != aws_type: continue
+
+        _results = {}
+        for _key,_value in resource["instances"][0]["attributes"].items():
+            _results[_key] = _value
+
+        _results["_id"] = _results["id"]
+
+        # values will alway be automatically encrypted
+        _results["values"] = {}
+        _results["values"]["AWS_ACCESS_KEY_ID"] = _results["id"]
+        _results["values"]["AWS_SECRET_ACCESS_KEY"] = _results["secret"]
+
+        _results["resource_type"] = resource_type
+        _results["provider"] = provider
+        _results["main"] = True
+        _results["cred_type"] = "aws"
+
+        # unlike other resources, we don't include
+        # the entire tf state file since it 
+        # contains sensitive information
+        #_results["raw"] = {"terraform":b64_encode(data)}
+
+        for _dkey in ["ses_smtp_password_v4","secret"]:
+            if not _results.get(_dkey): continue
+            del _results[_dkey]
+
+        results = _results
+
+        break
+
+# ref 34532045732
+to_jsonfile(results,"{}.json".format(resource_type))

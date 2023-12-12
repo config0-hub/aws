@@ -1,0 +1,806 @@
+#!/usr/bin/env python
+#
+
+import traceback
+import os
+import json
+import sys
+import random
+import subprocess
+from time import sleep
+
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.cloud.awscli import AwsCli
+from config0_publisher.utilities import to_json
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.utilities import id_generator
+
+class Main(AwsCli):
+
+    def __init__(self,**kwargs):
+
+        AwsCli.__init__(self)
+        self.classname = 'Ec2Server'
+        self.logger = Config0Logger(self.classname,logcategory="cloudprovider")
+        self.logger.debug("Instantiating %s" % self.classname)
+        self.base_cmd = "aws ec2"
+        self.product = "ec2"
+        self.provider = "ec2"
+        self.resource_type = "server"
+        self.shelloutconfig = "config0-hub:::aws::ec2_server"
+        self.availability_zone = None
+
+    def _get_spot_price(self):
+
+        '''
+        export AWS_DEFAULT_REGION=eu-west-1 ; aws ec2 describe-spot-price-history --instance-types t3a.small --max-items 1 --product-descriptions Linux/UNIX --start-time=$(date +%s) --query 'SpotPriceHistory[*].{az:AvailabilityZone, price:SpotPrice}' --output json
+        [
+            {
+                "price": "0.005600", 
+                "az": "us-east-1a"
+            }
+        ]
+        '''
+
+        instance_type = self.inputargs.get("instance_type","t2.micro")
+
+        product_description = self.inputargs.get("product_description","Linux/UNIX")
+
+        add_cmd = "describe-spot-price-history --max-items 1 --output json --start-time=$(date +%s) --query 'SpotPriceHistory[*].{az:AvailabilityZone, price:SpotPrice}'"
+
+        _cmd = "{} {} --instance-types {} --product-descriptions {}".format(self.base_cmd,
+                                                                            add_cmd,
+                                                                            instance_type,
+                                                                            product_description)
+
+        _price = None
+        _az = None
+
+        _cmd = "export AWS_DEFAULT_REGION={}; {}".format(self.aws_default_region,
+                                                         _cmd)
+
+        results = self.execute(_cmd,
+                               convert_to_json=True,
+                               exit_error=False)
+
+        # {'status': True, 'output': [{u'price': u'0.003400', u'az': u'eu-west-1c'}]}
+        try:
+            output = results["output"][0]
+            _price = output["price"]
+            _az = output["az"]
+        except:
+            failed_message = traceback.format_exc()
+            self.logger.debug("")
+            self.logger.debug("Cannot determine spot price for \n{}".format(_cmd))
+            self.logger.debug("")
+            self.logger.debug("failed_message\n {}".format(failed_message))
+            self.logger.debug("")
+            self.logger.debug(_cmd)
+
+        if not _price:
+            return
+
+        return {"price":str(_price),
+                "az":_az}
+
+    def exists(self,**kwargs):
+
+        #aws ec2 describe-instances --filters "Name=tag:Name,Values=test,Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped,terminated" --region us-east-1 
+
+        add_cmd = "describe-instances"
+        verify_terminate = kwargs.get("verify_terminate")
+
+        name = kwargs.get("name")
+        instance_id = kwargs.get("instance_id")
+        convert_to_json = kwargs.get("convert_to_json",True)
+
+        if instance_id:
+            _cmd = "{} {} --instance-ids {} --filters".format(self.base_cmd,
+                                                              add_cmd,
+                                                              instance_id)
+        else:
+            _cmd = "{} {} --filters 'Name=tag:Name,Values={}'".format(self.base_cmd,
+                                                                      add_cmd,name)
+
+        results = {"status":True}
+
+        if verify_terminate: 
+            _cmd = _cmd + " 'Name=instance-state-name,Values=terminated'"
+        else:
+            # We only get non-terminated instances
+            _cmd = _cmd + " 'Name=instance-state-name,Values=pending,running,shutting-down,stopping,stopped'"
+
+        cmd = self.get_cmd_region(_cmd)
+
+        results = self.execute(cmd,
+                               convert_to_json=convert_to_json,
+                               exit_error=False)
+        
+        try:
+            reservations = results["output"]["Reservations"]
+        except:
+            reservations = None
+
+        if not reservations: 
+            results["status"] = False
+
+        return results
+
+    def get(self):
+
+        results = self.exists(**self.inputargs)
+
+        if results.get("status") is None: 
+            exit(0)
+
+        if results.get("status") is False: 
+            self.cmd_failed(**self.inputargs)
+
+        self.successful_output(output=results["output"])
+
+    def _get_file_config(self,**kwargs):
+
+        disksize = int(self.inputargs.get("disksize",20))
+        volume_type = str(self.inputargs.get("volume_type","standard"))
+
+        file_config = {"DeviceName":"/dev/sda1",
+                       "Ebs": {"DeleteOnTermination":True,
+                              "VolumeSize":disksize,
+                              "VolumeType":volume_type}}
+
+        self.file_config = [ file_config ]
+
+        return self.file_config
+
+    def start(self):
+
+        #aws ec2 start-instances --instance-ids i-5c8282ed
+
+        reservations = self.exists(convert_to_json=True,
+                                   **self.inputargs)["output"].get("Reservations")
+
+        if len(reservations[0]['Instances']) != 1:
+            msg = 'Expected one instance, but found "{}" instances'.format(len(reservations[0]['Instances']))
+            self.logger.error(msg)
+            exit(9)
+
+        Instance = reservations[0]['Instances'][0]
+        instance_id = Instance['InstanceId']
+
+        if Instance['State']['Name'] in [ "shutting-down", "stopping", "stopped" ]:
+
+            self.logger.debug('current status of instance {} is {}"'.format(instance_id,
+                                                                            Instance['State']['Name']))
+
+            add_cmd = "start-instances"
+            cmd = "{} {} --instance-ids {}".format(self.base_cmd,
+                                                   add_cmd,
+                                                   instance_id)
+            self.execute(cmd,
+                         convert_to_json=True,
+                         exit_error=False)
+
+        Instance = self.exists(convert_to_json=True,
+                               **self.inputargs)["output"].get("Reservations")[0]['Instances'][0]
+
+        status = Instance['State']['Name']
+        self.logger.debug('current status of instance {} is {}"'.format(instance_id,
+                                                                        status))
+
+        _Instance = self.confirm_status(statuses=["running"])
+
+        if not _Instance: 
+            exit(3)
+
+        Instance = _Instance
+
+        # Zero out ip changes since they may/will change when it is started up again
+        resource = {"status": "running",
+                    'private_dns_name': Instance["PrivateDnsName"],
+                    'private_ip': Instance["PrivateIpAddress"]}
+
+        if Instance.get("PublicIpAddress"): 
+            resource['public_ip'] = Instance["PublicIpAddress"]
+
+        if Instance.get("PublicDnsName"): 
+            resource['public_dns_name'] = Instance["PublicDnsName"]
+
+        self.write_resource_to_json_file(resource)
+        exit(0)
+
+    def stop(self):
+
+        #aws ec2 stop-instances --instance-ids i-5c8282ed
+
+        reservations = self.exists(convert_to_json=True,**self.inputargs)["output"].get("Reservations")
+
+        if len(reservations[0]['Instances']) != 1:
+            msg = 'Expected one instance, but found "{}" instances'.format(len(reservations[0]['Instances']))
+            self.logger.error(msg)
+            exit(9)
+
+        Instance = reservations[0]['Instances'][0]
+        instance_id = Instance['InstanceId']
+
+        if Instance['State']['Name'] not in [ "shutting-down", "stopping", "stopped" ]:
+            self.logger.debug('current status of instance {} is {}"'.format(instance_id,
+                                                                            Instance['State']['Name']))
+            add_cmd = "stop-instances"
+            cmd = "{} {} --instance-ids {}".format(self.base_cmd,
+                                                   add_cmd,
+                                                   instance_id)
+            self.execute(cmd,
+                         convert_to_json=True,
+                         exit_error=False)
+
+        status = self.exists(convert_to_json=True,
+                             **self.inputargs)["output"].get("Reservations")[0]['Instances'][0]['State']['Name']
+
+        self.logger.debug('current status of instance {} is {}"'.format(instance_id,
+                                                                        status))
+
+
+        _Instance = self.confirm_status(statuses=[ "stopped" ])
+
+        if not _Instance: 
+            exit(3)
+
+        Instance = _Instance
+
+        resource = {"status": "stopped",
+                    'private_dns_name': Instance.get("PrivateDnsName"),
+                    'private_ip': Instance.get("PrivateIpAddress"),
+                    'public_ip': None, 'public_dns_name': None}
+
+        self.write_resource_to_json_file(resource)
+        exit(0)
+
+    def confirm_status(self,statuses=["running"]):
+
+        for count in range(1,30):
+
+            reservations = self.exists(convert_to_json=True,
+                                       **self.inputargs)["output"].get("Reservations")
+
+            if not reservations: 
+                self.logger.debug("Waiting for server to {} ...".format(statuses))
+                sleep(5)
+                continue
+
+            Instance = reservations[0]['Instances'][0]
+
+            _status = Instance["State"]["Name"]
+            if _status in statuses: return Instance
+            self.logger.debug("Waiting for server to {} ...".format(statuses))
+            sleep(5)
+
+        Instance = reservations[0]['Instances'][0]
+
+        self.logger.warn('Could not confirm instance "{}" is running. State is "{}"'.format(Instance['InstanceId'],
+                                                                                            Instance['State']['Name']))
+
+        return False
+
+    def _ami_search(self):
+
+        ami_filter = self.inputargs.get("ami_filter",
+                                        "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-*")
+
+        ami_owner = self.inputargs.get("ami_owner",
+                                       "099720109477")
+
+        _cmd = 'aws ec2 describe-images  --filters "{}" --owners "{}" --query \'sort_by(Images,&CreationDate)[-1].ImageId\' --output text'.format(ami_filter,
+                                                                                                                                                  ami_owner)
+
+        cmd = self.get_cmd_region(_cmd)
+
+        return subprocess.check_output(cmd, 
+                                       universal_newlines=True,
+                                       shell=True).strip()
+
+    def _destroy_spot(self):
+
+        spot_req_id = self.inputargs.get("spot_req_id")
+
+        cmd = "aws ec2 cancel-spot-instance-requests --spot-instance-request-ids {}".format(spot_req_id)
+
+        self.execute(cmd,
+                     convert_to_json=True,
+                     exit_error=False)
+
+    def _get_spot_params(self,max_price):
+
+        #results = {"spot_price":_spot_price}
+        #results["availability_zone"] = _availability_zone
+
+        spot_type = self.inputargs.get("spot_type","persistent")
+        spot_max_price = self.inputargs.get("spot_max_price")
+
+        if not spot_max_price: 
+            spot_max_price = max_price
+
+        results = { "MarketType": "spot",
+                    "SpotOptions": {}
+                    }
+
+        results["SpotOptions"]["SpotInstanceType"] = spot_type
+        results["SpotOptions"]["MaxPrice"] = spot_max_price
+
+        if spot_type == "persistent":
+            results["SpotOptions"]["InstanceInterruptionBehavior"] = "stop"
+
+        # InstanceInterruptionBehavior': 'hibernate'|'stop'|'terminate'
+
+        return results
+
+    def _write_user_data_to_file(self):
+
+        user_data = self.inputargs.get("user_data")
+
+        if not user_data: 
+            return
+
+        filename = "/tmp/{}".format(id_generator(8))
+
+        cmd = 'echo "{}" | base64 -d > {}'.format(user_data,filename)
+
+        self.execute(cmd,
+                     convert_to_json=False,
+                     exit_error=True)
+
+        return filename
+
+    def create(self):
+
+        '''
+        aws ec2 run-instances --image-id ami-abc12345 --count 1 \
+                --instance-type t2.micro --key-name MyKeyPair \
+                --subnet-id subnet-6e7f829e \
+                --tag-specifications 'ResourceType=instance,Tags=[{Key=webserver,Value=production}]' 'ResourceType=volume,Tags=[{Key=cost-center,Value=cc123}]' 
+        #        --block-device-mappings 'DeviceName=/dev/sda1,Ebs={DeleteOnTermination=true,VolumeSize=32,VolumeType=standard}'
+        '''
+
+        name = self.inputargs["name"]
+        ami = self.inputargs.get("ami")
+        instance_type = self.inputargs.get("instance_type","t2.micro")
+        key = self.inputargs.get("key","config0_ssh_key")
+        security_group_ids = self.inputargs.get("security_group_ids")
+        security_groups = self.inputargs.get("security_groups")
+        subnet_id = self.inputargs.get("subnet_id")
+        clobber = self.inputargs.get("clobber",True)
+        spot = self.inputargs.get("spot")
+        iam_instance_profile = self.inputargs.get("iam_instance_profile")
+
+        if not ami: 
+            ami = self._ami_search()
+
+        _exists = self.exists(convert_to_json=True,
+                              **self.inputargs)
+
+        if _exists.get("status") is not False and not clobber:
+            failed_message = "{} name = {} already exists".format(self.product,name)
+            self.cmd_failed(failed_message=failed_message)
+
+        if _exists.get("status") is not False and clobber:
+            reservations = _exists["output"].get("Reservations")
+            Instance = reservations[0]['Instances'][0]
+            instance_id = Instance['InstanceId']
+
+            error_msg = '{} already exists as instance_id "{}" - it was destroy since clobber is True'.format(name,
+                                                                                                              instance_id)
+
+            self._destroy(instance_id,confirm=True)
+            raise Exception(error_msg)
+
+        add_cmd = "run-instances"
+        _cmd = "{} {} --image-id {} --instance-type {} --key-name {}".format(self.base_cmd,
+                                                                             add_cmd,
+                                                                             ami, 
+                                                                             instance_type,
+                                                                             key)
+
+        tags = self.get_resource_tags()
+        _cmd = "{} --tag-specifications ".format(_cmd)+"'ResourceType=instance"+",Tags="+tags+"'"
+
+        if security_group_ids: 
+            _cmd = "{} --security-group-ids {}".format(_cmd," ".join(security_group_ids.split(",")))
+        elif security_groups: 
+            _cmd = "{} --security-groups {}".format(_cmd," ".join(security_groups.split(",")))
+
+        # We automatically assign it a public ip address
+        if subnet_id: 
+            _cmd = "{} --subnet-id {} --associate-public-ip-address".format(_cmd,subnet_id)
+
+        if iam_instance_profile: 
+            _cmd = "{} --iam-instance-profile Name={}".format(_cmd,iam_instance_profile)
+
+        # user_data
+        _user_data_filename = self._write_user_data_to_file()
+
+        if _user_data_filename: 
+            _cmd = "{} --user-data file://{}".format(_cmd,_user_data_filename)
+
+        spot_info = self._get_spot_price()
+
+        # spot info
+        if spot and spot_info: 
+            spot_max_price = spot_info["price"]
+            self.availability_zone = spot_info["az"]
+            spot_params = self._get_spot_params(str(float(spot_max_price)*float(1.2)))
+            _cmd = "{} --instance-market-options '{}'".format(_cmd,json.dumps(spot_params))
+
+        resource = self._create(_cmd)
+
+        self.write_resource_to_json_file(resource)
+
+        if _user_data_filename: 
+            os.system("rm -rf {}".format(_user_data_filename))
+
+        exit(0)
+
+    def _get_base_resource_tags(self):
+
+        tags = to_json(self.get_tags())
+
+        if isinstance(tags,dict):
+            tags = list(tags.values())
+
+        if not isinstance(tags,list):
+            tags = list(tags)
+
+        try:
+            _tags = list(to_json(self.inputargs.get("tags")).values())
+        except:
+            _tags = None
+
+        if not _tags: return tags
+
+        tags.extend(_tags)
+
+        return tags
+
+    def _create(self,base_cmd):
+
+        name = self.inputargs["name"]
+        confirm = self.inputargs.get("confirm",True)
+
+        # the availability zone is typically for spot instances 
+        #if self.availability_zone: 
+        #    _placement = json.dumps({ "AvailabilityZone": self.availability_zone})
+        #    base_cmd = "{} --placement '{}'".format(base_cmd,_placement)
+
+        self.set_ondisktmp()
+        self._get_file_config(**self.inputargs)
+
+        self.file_config_loc = os.path.join(self.tempdir.get(),
+                                            name)
+        self.write_file_config()
+
+        _cmd = "{} --block-device-mappings file://{}".format(base_cmd,
+                                                             self.file_config_loc)
+        cmd = self.get_cmd_region(_cmd)
+
+        self.logger.debug("*"*32)
+        self.logger.debug("")
+        self.logger.debug(cmd)
+        self.logger.debug("")
+        self.logger.debug("*"*32)
+
+        Instance = self.execute(cmd,
+                                convert_to_json=True,
+                                exit_error=True)["output"]['Instances'][0]
+
+        self.inputargs["instance_id"] = Instance["InstanceId"]
+
+        self.logger.debug("Sleep 5 secs. Waiting for server to run ...")
+        sleep(5)
+
+        _Instance = self.confirm_status(statuses=["running"])
+
+        if not _Instance:
+            exit(3)
+
+        Instance = _Instance
+
+        resource = {"raw":{}}
+        resource["raw"][self.product] = Instance
+        resource['name'] = name
+        resource['hostname'] = name
+
+        resource['instance_id'] = Instance['InstanceId']
+        resource['_id'] = Instance['InstanceId']
+        resource['id'] = Instance['InstanceId']
+
+        resource['private_dns_name'] = Instance["PrivateDnsName"]
+        resource['private_ip'] = Instance["PrivateIpAddress"]
+
+        if Instance.get("PublicIpAddress"): 
+            resource['public_ip'] = Instance["PublicIpAddress"]
+
+        if Instance.get("PublicDnsName"): 
+            resource['public_dns_name'] = Instance["PublicDnsName"]
+
+        resource['security_groups'] = Instance["SecurityGroups"]
+        resource['security_group_ids'] = Instance["SecurityGroups"]
+        resource['sg_ids'] = Instance["SecurityGroups"]
+
+        if len(Instance["SecurityGroups"]) == 1: 
+            resource['security_group'] = Instance["SecurityGroups"][0]
+            resource['security_group_id'] = Instance["SecurityGroups"][0]
+            resource['security-group-id'] = Instance["SecurityGroups"][0]
+            resource['sg_id'] = Instance["SecurityGroups"][0]
+
+        resource['key'] = Instance["KeyName"]
+        resource['key_name'] = Instance["KeyName"]
+        resource["subnet_id"] = Instance['SubnetId']
+        resource["vpc_id"] = Instance['VpcId']
+        resource["image_id"] = Instance['ImageId']
+        resource["ami"] = Instance['ImageId']
+        resource['placement'] = Instance["Placement"]["AvailabilityZone"]
+        resource['availability_zone'] = Instance["Placement"]["AvailabilityZone"]
+        resource["resource_type"] = self.resource_type
+        resource["provider"] = self.provider
+        resource["region"] = self.aws_default_region
+        resource["aws_default_region"] = self.aws_default_region
+        resource['shelloutconfig'] = self.shelloutconfig
+        #resource['status'] = Instance['State']['Name']
+        resource['status'] = "running"
+        resource["active"] = True
+
+        if Instance.get("SpotInstanceRequestId"):
+            resource["spot_req_id"] = Instance["SpotInstanceRequestId"]
+
+        tags = self._get_base_resource_tags()
+        tags.extend( [ Instance['InstanceId'], Instance["Placement"]["AvailabilityZone"] ])
+
+        # Make sure tags are distinct
+        resource["tags"] = list(set(tags))
+
+        # Add modify actions stop and start
+        resource["modify"] = {}
+        resource["modify"]["stop"] = {"shelloutconfig":self.shelloutconfig}
+        resource["modify"]["stop"]["env_vars"] = json.dumps({"NAME":name,
+                                                             "INSTANCE_ID":Instance['InstanceId'],
+                                                             "METHOD":"stop",
+                                                             "AWS_DEFAULT_REGION":self.aws_default_region})
+
+        resource["modify"]["start"] = {"shelloutconfig":self.shelloutconfig}
+        resource["modify"]["start"]["env_vars"] = json.dumps({"NAME":name,
+                                                              "INSTANCE_ID":Instance['InstanceId'],
+                                                              "METHOD":"start",
+                                                              "AWS_DEFAULT_REGION":self.aws_default_region})
+
+        # Destroy is special and is at the root level
+        resource["destroy"] = {"shelloutconfig":self.shelloutconfig}
+
+        _destroy_env_vars = {"NAME":name,
+                             "CONFIRM":confirm,
+                             "INSTANCE_ID":Instance['InstanceId'],
+                             "METHOD":"destroy",
+                             "AWS_DEFAULT_REGION":self.aws_default_region}
+
+        if resource.get("spot_req_id"): 
+            _destroy_env_vars["SPOT_REQ_ID"] = resource["spot_req_id"]
+
+        resource["destroy"]["env_vars"] = json.dumps(_destroy_env_vars)
+
+        self.tempdir.delete()
+
+        return resource
+
+    def confirm_destroy(self):
+
+        for count in range(1,30):
+
+            reservations = self.exists(convert_to_json=True,
+                                       **self.inputargs)["output"].get("Reservations")
+
+            if not reservations: 
+                self.logger.debug("Instance does not exists")
+                return True
+
+            reservations = self.exists(convert_to_json=True,
+                                       verify_terminate=True,
+                                       **self.inputargs)["output"].get("Reservations")
+
+            if reservations: 
+                self.logger.debug("Instance has been confirm terminated")
+                return True
+
+            self.logger.debug("Waiting for server to terminate ...")
+            sleep(5)
+            
+        return False
+
+    def destroy(self):
+
+        #aws ec2 terminate-instances --instance-ids i-5203422c
+
+        instance_id = self.inputargs["instance_id"]
+
+        self.logger.debug('Looking to destroy {} instance_id = "{}" in "{}"'.format(self.product,
+                                                                                    instance_id,
+                                                                                    self.aws_default_region))
+
+        _results = self.exists(convert_to_json=False,
+                               **self.inputargs)
+
+        if not _results.get("status"):
+
+            output = '{} instance_id = "{}" in "{}" does not exists'.format(self.product,
+                                                                            self.inputargs.get("instance_id"),
+                                                                            self.aws_default_region)
+            exit(0)
+
+        self._destroy_spot()
+
+        _results = self._destroy(instance_id)
+
+        if _results.get("status") is True: 
+            self.logger.debug('{} instance_id "{}" destroyed in {}'.format(self.product,
+                                                                           instance_id,
+                                                                           self.aws_default_region))
+            exit(0)
+
+        sleep(1)
+
+        failed_message = "could not destroyed {} instance_id {} in {}".format(self.product,
+                                                                              instance_id,
+                                                                              self.aws_default_region)
+        self.cmd_failed(failed_message=failed_message)
+
+    def _destroy(self,instance_id,confirm=None):
+
+        if not confirm: confirm = self.inputargs.get("confirm",True)
+
+        add_cmd = "terminate-instances"
+        _cmd = "{} {} --instance-ids {}".format(self.base_cmd,
+                                                add_cmd,
+                                                instance_id)
+        cmd = self.get_cmd_region(_cmd)
+
+        results = self.execute(cmd,
+                               convert_to_json=None)
+
+        if confirm and not self.confirm_destroy(): 
+            self.logger.warn('Could not confirm destroy of instance_id "{}"'.format(instance_id))
+
+        return results
+
+def usage():
+
+    print("""
+script + environmental variables
+
+or
+
+script + json_input (as argument)
+
+environmental variables:
+    basic:
+        AWS_ACCESS_KEY_ID  
+        AWS_SECRET_ACCESS_KEY
+        METHOD
+        AWS_DEFAULT_REGION (optional)
+
+    stop:
+        INSTANCE_ID
+
+    start:
+        INSTANCE_ID
+
+    create:
+        NAME
+        AMI 
+        AMI_FILTER
+        AMI_OWNER
+        INSTANCE_TYPE (default - t2.micro)
+        INSTANCE_ID (optional)
+        KEY (optional)
+        SECURITY_GROUP_IDS (optional)
+        SECURITY_GROUPS (optional)
+        SPOT (optional) - request spot
+        SPOT_REQ_ID
+        SPOT_MAX_PRICE (optional) - max spot
+        SPOT_TYPE (optional) persistent/one-tome
+        SUBNET_ID (optional)
+        DISKSIZE (optional)
+        VOLUME_TYPE (optional)
+        JOB_INSTANCE_ID (optional)
+        SCHEDULE_ID (optional)
+        TAGS (optional)
+
+    destroy:
+        INSTANCE_ID
+        CONFIRM
+
+    get:
+        NAME
+
+       """)
+
+    exit(4)
+
+if __name__ == '__main__':
+
+    try:
+        json_input = sys.argv[1]
+    except:
+        json_input = None
+
+    main = Main()
+
+    if json_input:
+        main.set_inputargs(json_input=json_input)
+    else:
+        set_env_vars = [ "name",
+                         "disksize",
+                         "ami",
+                         "ami_filter",
+                         "ami_owner",
+                         "job_instance_id",
+                         "schedule_id",
+                         "instance_id",
+                         "instance_type",
+                         "iam_instance_profile",
+                         "user_data",
+                         "key",
+                         "security_group_ids",
+                         "security_groups",
+                         "confirm",
+                         "clobber",
+                         "subnet_id",
+                         "spot",
+                         "spot_max_price",
+                         "spot_type",
+                         "spot_req_id",
+                         "volume_type",
+                         "tags",
+                         "aws_default_region" ]
+
+        main.set_inputargs(set_env_vars=set_env_vars)
+   
+    method = main.inputargs.get("method")
+
+    if not method:
+        print("method/ENV VARIABLE METHOD is needed")
+        exit(4)
+
+    # Set class and region
+    main.get_region()
+
+    if method == "create":
+
+        req_keys = [ "name",
+                     "key" ]
+
+        main.check_required_inputargs(keys=req_keys)
+        main.create()
+
+    elif method == "start":
+
+        req_keys = [ "instance_id" ]
+        main.check_required_inputargs(keys=req_keys)
+        main.start()
+
+    elif method == "stop":
+
+        req_keys = [ "instance_id" ]
+        main.check_required_inputargs(keys=req_keys)
+        main.stop()
+
+    elif method == "destroy":
+    
+        main.check_required_inputargs(keys=["instance_id"])
+        main.destroy()
+
+    elif method == "get":
+
+        main.check_required_inputargs(keys=["name"])
+        main.get()
+
+    else:
+        usage()
+        print('method "{}" not supported!'.format(method))
+        exit(4)
+

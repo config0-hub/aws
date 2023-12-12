@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+
+import os
+import json
+import hashlib
+from config0_publisher.utilities import print_json
+from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.serialization import b64_encode
+  
+terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")
+
+with open(terraform_state_file) as json_file:
+    data = json.load(json_file)
+
+with open(terraform_state_file) as json_file:
+    raw = json.load(json_file)
+
+if not data:
+    print("ERROR - there is no data from {}".format(os.path.join(os.getcwd(),terraform_state_file)))
+    exit(9)
+
+aws_type = os.environ.get("AWS_TYPE","aws_iam_instance_profile")
+resource_type = "iam_instance_profile"
+provider = "aws"
+
+for resource in data["resources"]:
+    for instance in resource["instances"]:
+
+        if resource["type"] != aws_type: continue
+
+        _results = {}
+        _results["arn"] = resource["instances"][0]["attributes"]["arn"]
+        _results["name"] = resource["instances"][0]["attributes"]["name"]
+        _results["unique_id"] = resource["instances"][0]["attributes"]["unique_id"]
+        _results["role"] = resource["instances"][0]["attributes"]["role"]
+        _results["id"] = _results["unique_id"]
+        _results["_id"] = _results["unique_id"]
+        _results["resource_type"] = resource_type
+        _results["provider"] = provider
+        _results["main"] = True
+
+        # changed 45234532 - moved over to b64 hash
+        _results["raw"] = {"terraform":b64_encode(raw)}
+
+        results = _results
+
+        break
+
+# ref 34532045732
+to_jsonfile(results,"{}.json".format(resource_type))
