@@ -27,7 +27,7 @@ class Main(AwsCli):
         self.product = "ec2"
         self.provider = "ec2"
         self.resource_type = "server"
-        self.shelloutconfig = "config0-hub:::aws::ec2_server"
+        self.shelloutconfig = "config0-publish:::aws::ec2_server"
         self.availability_zone = None
 
     def _get_spot_price(self):

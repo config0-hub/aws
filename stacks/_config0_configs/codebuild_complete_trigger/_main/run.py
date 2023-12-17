@@ -17,10 +17,10 @@ def run(stackargs):
 
     # Add execgroup
     stack.add_execgroup(
-        "config0-hub:::aws::codebuild_evntbrdg_sns_lambda", "tf_execgroup")
+        "config0-publish:::aws::codebuild_evntbrdg_sns_lambda", "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-hub:::tf_executor')
+    stack.add_substack('config0-publish:::tf_executor')
 
     # Initialize Variables in stack
     stack.init_variables()

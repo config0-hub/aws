@@ -71,10 +71,10 @@ def run(stackargs):
     stack.parse.add_optional(key="allows_hash")
     stack.parse.add_optional(key="denies_hash")
 
-    stack.add_execgroup("config0-hub:::aws::iam-keys", "tf_execgroup")
+    stack.add_execgroup("config0-publish:::aws::iam-keys", "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-hub:::tf_executor')
+    stack.add_substack('config0-publish:::tf_executor')
 
     # Initialize
     stack.init_variables()

@@ -12,7 +12,7 @@ class Main(newSchedStack):
         self.parse.add_required(key="bastion_sg_id")
         self.parse.add_required(key="docker_host")
         self.parse.add_required(
-            key="src_build_groups", default="config0-hub:::gitlab::runner,config0-hub:::gitlab::runner-autoscaling")
+            key="src_build_groups", default="config0-publish:::gitlab::runner,config0-publish:::gitlab::runner-autoscaling")
 
         # docker image to execute terraform with
         self.parse.add_optional(key="aws_default_region", default="us-west-1")
@@ -25,10 +25,10 @@ class Main(newSchedStack):
         self.parse.add_required(key="docker_repo_name")
 
         # Add substack
-        self.stack.add_substack('config0-hub:::new_ec2_ssh_key')
-        self.stack.add_substack('config0-hub:::aws_iam_role')
-        self.stack.add_substack('config0-hub:::ec2_ubuntu_admin')
-        self.stack.add_substack('config0-hub:::docker_build_ssh')
+        self.stack.add_substack('config0-publish:::new_ec2_ssh_key')
+        self.stack.add_substack('config0-publish:::aws_iam_role')
+        self.stack.add_substack('config0-publish:::ec2_ubuntu_admin')
+        self.stack.add_substack('config0-publish:::docker_build_ssh')
 
         self.stack.init_execgroups()
         self.stack.init_substacks()

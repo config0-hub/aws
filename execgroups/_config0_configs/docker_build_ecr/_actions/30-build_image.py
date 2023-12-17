@@ -4,7 +4,7 @@ def default():
     env_vars = []
     shelloutconfigs = []
 
-    shelloutconfigs.append('config0-hub:::docker::simple_build_push')
+    shelloutconfigs.append('config0-publish:::docker::simple_build_push')
 
     task['method'] = 'shelloutconfig'
     task['metadata'] = {'env_vars': env_vars, 

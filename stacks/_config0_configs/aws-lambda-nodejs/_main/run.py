@@ -1,5 +1,4 @@
 def run(stackargs):
-
     import json
     import os
 
@@ -70,10 +69,10 @@ def run(stackargs):
     stack.parse.add_optional(key="debug")
 
     # declare execution groups
-    stack.add_execgroup("config0-hub:::aws::nodejs_to_lambda")
+    stack.add_execgroup("config0-publish:::aws::nodejs_to_lambda")
 
     # add substack
-    stack.add_substack('config0-hub:::aws_lambda')
+    stack.add_substack('config0-publish:::aws_lambda')
 
     # initialize variables
     stack.init_variables()
@@ -98,9 +97,9 @@ def run(stackargs):
     if stack.get_attr("debug"):
         env_vars["CONFIG0_ENHANCED_LOGGING"] = "True"
 
-    inputargs = {"name": stack.lambda_name}
-    inputargs["env_vars"] = json.dumps(env_vars)
-    inputargs["working_dir"] = "execgroup"  # this reset working directory to be same as execuction group
+    inputargs = {"name": stack.lambda_name,
+                 "env_vars": json.dumps(env_vars),
+                 "working_dir": "execgroup"}
 
     if stack.get_attr("cloud_tags_hash"):
         inputargs["cloud_tags_hash"] = stack.cloud_tags_hash
@@ -117,10 +116,10 @@ def run(stackargs):
     arguments = stack.get_tagged_vars(tag="arguments",
                                       output="dict")
 
-    inputargs = {"arguments": arguments}
-    inputargs["automation_phase"] = "infrastructure"
-    inputargs["human_description"] = 'Create lambda function for {}'.format(
-        stack.lambda_name)
+    inputargs = {"arguments": arguments,
+                 "automation_phase": "infrastructure",
+                 "human_description": 'Create lambda function for {}'.format(stack.lambda_name)}
+
     stack.aws_lambda.insert(display=True, **inputargs)
 
     return stack.get_results()

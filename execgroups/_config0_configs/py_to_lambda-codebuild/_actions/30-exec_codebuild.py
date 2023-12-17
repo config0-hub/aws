@@ -3,7 +3,7 @@ def default():
         'method': 'shelloutconfig',
         'metadata': {
             'env_vars': [],
-            'shelloutconfigs': ['config0-hub:::aws::codebuild-srcfile']
+            'shelloutconfigs': ['config0-publish:::aws::codebuild-srcfile']
         }
     }
     return task

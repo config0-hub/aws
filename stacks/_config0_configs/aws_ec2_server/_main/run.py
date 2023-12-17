@@ -2,7 +2,6 @@ from config0_publisher.terraform import TFConstructor
 
 
 def run(stackargs):
-
     import random
 
     # instantiate authoring stack
@@ -70,11 +69,11 @@ def run(stackargs):
 
     # tf_execgroup alias isn't necessary, but it
     # provides some standardization across tf stacks
-    stack.add_execgroup("config0-hub:::aws::ec2_server",
+    stack.add_execgroup("config0-publish:::aws::ec2_server",
                         "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-hub:::tf_executor')
+    stack.add_substack('config0-publish:::tf_executor')
 
     # initialize
     stack.init_variables()

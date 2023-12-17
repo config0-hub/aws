@@ -20,7 +20,7 @@
 ```
 infrastructure:
    ssh_upload:
-       stack_name: config0-hub:::ec2_ssh_upload
+       stack_name: config0-publish:::ec2_ssh_upload
        arguments:
           name: config0-test-ec2-key
        credentials:
