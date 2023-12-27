@@ -23,7 +23,7 @@ class Main(AwsCli):
         self.product = "ec2"
         self.provider = "ec2"
         self.itype = "ami"
-        self.shelloutconfig = "config0-publish:::aws::ec2_ami"
+        self.shelloutconfig = "config0-hub:::aws::ec2_ami"
 
     def exists(self,**kwargs):
 

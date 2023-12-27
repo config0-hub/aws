@@ -7,8 +7,13 @@ def run(stackargs):
     stack = newStack(stackargs)
 
     # Add default variables
-    stack.parse.add_required(key="topic_name", tags="tfvar", types="str")
-    stack.parse.add_required(key="lambda_name", tags="tfvar", types="str")
+    stack.parse.add_required(key="topic_name",
+                             tags="tfvar",
+                             types="str")
+    
+    stack.parse.add_required(key="lambda_name",
+                             tags="tfvar",
+                             types="str")
 
     stack.parse.add_optional(key="aws_default_region",
                              default="eu-west-1",
@@ -16,11 +21,11 @@ def run(stackargs):
                              types="str")
 
     # Add execgroup
-    stack.add_execgroup(
-        "config0-publish:::aws::codebuild_evntbrdg_sns_lambda", "tf_execgroup")
+    stack.add_execgroup("config0-hub:::aws::codebuild_evntbrdg_sns_lambda",
+                        "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-publish:::tf_executor')
+    stack.add_substack('config0-hub:::tf_executor')
 
     # Initialize Variables in stack
     stack.init_variables()

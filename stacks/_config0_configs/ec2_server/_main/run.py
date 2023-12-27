@@ -150,11 +150,12 @@ def run(stackargs):
                              default="private")
 
     # Add shelloutconfig dependencies
-    stack.add_shelloutconfig('config0-publish:::aws::ec2_server', "ec2_server")
+    stack.add_shelloutconfig('config0-hub:::aws::ec2_server',
+                             "ec2_server")
 
     # substacks for volumes
-    stack.add_substack('config0-publish:::ebs_volume')
-    stack.add_substack('config0-publish:::ebs_modify')
+    stack.add_substack('config0-hub:::ebs_volume')
+    stack.add_substack('config0-hub:::ebs_modify')
 
     # Initialize Variables in stack
     stack.init_variables()
@@ -192,7 +193,6 @@ def run(stackargs):
 
     # Set environment variables for the shellout
     # to create the server
-    
     stack.env_vars = stack.get_tagged_vars(tag="env_var",
                                            uppercase=True,
                                            output="dict")
@@ -211,18 +211,18 @@ def run(stackargs):
 
     stack.verify_variables()
 
-    kwargs = stack.get_tagged_vars(tag="ec2_server",
-                                   output="dict")
+    inputargs = stack.get_tagged_vars(tag="ec2_server",
+                                      output="dict")
 
-    kwargs["display"] = True
-    kwargs["human_description"] = 'Create a ec2 server hostname "{}"'.format(stack.hostname)
-    kwargs["env_vars"] = json.dumps(stack.env_vars)
-    kwargs["automation_phase"] = "infrastructure"
-    kwargs["retries"] = 2
-    kwargs["timeout"] = 300
-    kwargs["wait_last_run"] = 2
+    inputargs = {"display": True,
+                 "human_description": 'Create an EC2 server hostname "{}"'.format(stack.hostname),
+                 "env_vars": json.dumps(stack.env_vars),
+                 "automation_phase": "infrastructure",
+                 "retries": 2,
+                 "timeout": 300,
+                 "wait_last_run": 2}
 
-    stack.ec2_server.resource_exec(**kwargs)
+    stack.ec2_server.resource_exec(**inputargs)
 
     if not stack.get_attr("volume_size"):
         return stack.get_results()
@@ -250,28 +250,3 @@ def run(stackargs):
                             **inputargs)
 
     return stack.get_results()
-
-    ####################################################
-    # attach, format and mount minimally
-    # volume_mountpoint and volume_fstype
-    # testtest333
-    # if you want to configure volume below
-    ####################################################
-    #if not stack.get_attr("volume_mountpoint"):
-    #    return stack.get_results()
-
-    #if not stack.get_attr("volume_fstype"):
-    #    return stack.get_results()
-
-    ## attach, format, and mount volume
-    #arguments = stack.get_tagged_vars(tag="ebs_config",
-    #                                  output="dict")
-
-    #kwargs = {"arguments": arguments}
-    #kwargs["automation_phase"] = "infrastructure"
-    #kwargs["human_description"] = "Format and attach fileystem on volume {}".format(
-    #    stack.volume_name)
-
-    #stack.ebs_modify.insert(display=None, **kwargs)
-
-    #return stack.get_results()

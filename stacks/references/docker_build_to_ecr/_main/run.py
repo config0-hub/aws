@@ -12,7 +12,7 @@ class Main(newSchedStack):
         self.parse.add_required(key="bastion_sg_id")
         self.parse.add_required(key="docker_host")
         self.parse.add_required(
-            key="src_build_groups", default="config0-publish:::gitlab::runner,config0-publish:::gitlab::runner-autoscaling")
+            key="src_build_groups", default="config0-hub:::gitlab::runner,config0-hub:::gitlab::runner-autoscaling")
 
         # docker image to execute terraform with
         self.parse.add_optional(key="aws_default_region", default="us-west-1")
@@ -25,10 +25,10 @@ class Main(newSchedStack):
         self.parse.add_required(key="docker_repo_name")
 
         # Add substack
-        self.stack.add_substack('config0-publish:::new_ec2_ssh_key')
-        self.stack.add_substack('config0-publish:::aws_iam_role')
-        self.stack.add_substack('config0-publish:::ec2_ubuntu_admin')
-        self.stack.add_substack('config0-publish:::docker_build_ssh')
+        self.stack.add_substack('config0-hub:::new_ec2_ssh_key')
+        self.stack.add_substack('config0-hub:::aws_iam_role')
+        self.stack.add_substack('config0-hub:::ec2_ubuntu_admin')
+        self.stack.add_substack('config0-hub:::docker_build_ssh')
 
         self.stack.init_execgroups()
         self.stack.init_substacks()
@@ -63,10 +63,11 @@ class Main(newSchedStack):
 
         for src_group in self.stack.to_list(self.stack.src_build_groups):
 
-            overide_values["build_src_group"] = src_group
-
-            inputargs = {"default_values": default_values,
-                         "overide_values": overide_values}
+            inputargs = {"arguments": arguments,
+                         "automation_phase": "infrastructure",
+                         "display": True,
+                         "default_values": default_values,
+                         "overide_values": {"build_src_group": src_group}}
 
             self.stack.docker_build_ssh.insert(display=True, **inputargs)
 
@@ -82,11 +83,9 @@ class Main(newSchedStack):
         default_values = {"aws_default_region": self.stack.aws_default_region}
 
         inputargs = {"default_values": default_values,
-                     "overide_values": overide_values}
-
-        inputargs["automation_phase"] = "infrastructure"
-        inputargs["human_description"] = 'Create and upload ssh key name {}'.format(
-            ssh_key_name)
+                     "overide_values": overide_values,
+                     "automation_phase": "infrastructure",
+                     "human_description": f'Create and upload ssh key name {ssh_key_name}'}
 
         return self.stack.new_ec2_ssh_key.insert(display=True, **inputargs)
 
@@ -111,11 +110,9 @@ class Main(newSchedStack):
         default_values = {"aws_default_region": self.stack.aws_default_region}
 
         inputargs = {"default_values": default_values,
-                     "overide_values": overide_values}
-
-        inputargs["automation_phase"] = "infrastructure"
-        inputargs["human_description"] = 'Create IAM role for {}'.format(
-            self.stack.docker_host)
+                     "overide_values": overide_values,
+                     "automation_phase": "infrastructure",
+                     "human_description": f'Create IAM role for {self.stack.docker_host}'}
 
         return self.stack.aws_iam_role.insert(display=True, **inputargs)
 
@@ -146,11 +143,9 @@ class Main(newSchedStack):
                           }
 
         inputargs = {"default_values": default_values,
-                     "overide_values": overide_values}
-
-        inputargs["automation_phase"] = "infrastructure"
-        inputargs["human_description"] = 'Create EC2 admin {}'.format(
-            self.stack.docker_host)
+                     "overide_values": overide_values,
+                     "automation_phase": "infrastructure",
+                     "human_description": f'Create EC2 admin {self.stack.docker_host}'}
 
         return self.stack.ec2_ubuntu_admin.insert(display=True, **inputargs)
 

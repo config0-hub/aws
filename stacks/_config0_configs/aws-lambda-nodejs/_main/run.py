@@ -69,10 +69,10 @@ def run(stackargs):
     stack.parse.add_optional(key="debug")
 
     # declare execution groups
-    stack.add_execgroup("config0-publish:::aws::nodejs_to_lambda")
+    stack.add_execgroup("config0-hub:::aws::nodejs_to_lambda")
 
     # add substack
-    stack.add_substack('config0-publish:::aws_lambda')
+    stack.add_substack('config0-hub:::aws_lambda')
 
     # initialize variables
     stack.init_variables()
@@ -91,8 +91,8 @@ def run(stackargs):
     env_vars = stack.get_tagged_vars(tag="env_vars",
                                      output="dict")
 
-    env_vars["LAMBDA_PKG_NAME"] = stack.lambda_name
-    env_vars["WORKING_SUBDIR"] = "var/tmp/lambda"
+    env_vars.update({"LAMBDA_PKG_NAME": stack.lambda_name,
+                     "WORKING_SUBDIR": "var/tmp/lambda"})
 
     if stack.get_attr("debug"):
         env_vars["CONFIG0_ENHANCED_LOGGING"] = "True"
@@ -120,6 +120,7 @@ def run(stackargs):
                  "automation_phase": "infrastructure",
                  "human_description": 'Create lambda function for {}'.format(stack.lambda_name)}
 
-    stack.aws_lambda.insert(display=True, **inputargs)
+    stack.aws_lambda.insert(display=True,
+                            **inputargs)
 
     return stack.get_results()

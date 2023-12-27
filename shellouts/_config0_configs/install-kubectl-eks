@@ -5,7 +5,6 @@ curl --silent --location -o /usr/local/bin/kubectl \
 
 chmod +x /usr/local/bin/kubectl
 
-# sudo yum -y install jq gettext bash-completion moreutils
 apt-get update && apt-get install awscli jq gettext bash-completion moreutils docker docker-compose -y
 
 echo 'yq() {

@@ -14,7 +14,7 @@
 | *argument*           | *description*                            | *var type* |  *default*      |
 | ------------- | -------------------------------------- | -------- | ------------ |
 | aws_default_region      | aws region - must be the same as where the hostname resides      | string   | us-east-1         |
-| shelloutconfig      | shelloutconfig for creating ami      | string   | config0-publish:::aws::ec2_ami         |
+| shelloutconfig      | shelloutconfig for creating ami      | string   | config0-hub:::aws::ec2_ami         |
 
 **Sample entry (as substack):**
 

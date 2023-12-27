@@ -71,10 +71,11 @@ def run(stackargs):
     stack.parse.add_optional(key="allows_hash")
     stack.parse.add_optional(key="denies_hash")
 
-    stack.add_execgroup("config0-publish:::aws::iam-keys", "tf_execgroup")
+    stack.add_execgroup("config0-hub:::aws::iam-keys",
+                        "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-publish:::tf_executor')
+    stack.add_substack('config0-hub:::tf_executor')
 
     # Initialize
     stack.init_variables()
@@ -115,55 +116,3 @@ def run(stackargs):
                              **tf.get())
 
     return stack.get_results()
-
-# "apigatewaymanagementapi:*",
-# "dynamodbstreams:*",
-# "events:*",
-# "route53domains:*",
-# "s3control:*",
-# "sagemaker-a2i-runtime:*",
-# "sms-voice:*",
-# "s3api:*",
-# "route53resolver:*",
-# "elbv2:*",
-# "kafka-cluster:*",
-# "execute-api-general",
-# "appmesh",
-# "cognito-identity",
-# "cloudformation:*",
-# "cloud9:*",
-# "cloudtrail:*",
-# "devicefarm:*",
-# "discovery:*",
-# "efs:*",
-# "elb:*",
-# "emr:*",
-# "glacier:*",
-# "glue:*",
-# "kafka:*",
-# "kinesis:*",
-# "logs:*",
-# "redshift:*",
-# "securityhub:*",
-# "servicediscovery:*",
-# "sns:*",
-# "acm:*",
-# "apigatewayv2:*",
-# "appmesh:*",
-# "cloudfront:*",
-# "cloudwatch:*",
-# "codecommit:*",
-# "codestar:*",
-# "docdb:*",
-# "ebs:*",
-# "ecs:*",
-# "route53:*",
-# "sagemaker:*",
-# "sqs:*",
-# "apigateway:*",
-# "execute-api:*",
-# "iam:*",
-# "stepfunctions:*"]
-# "codepipeline:*",
-# "codebuild:*",
-# "dynamodb:*" ]

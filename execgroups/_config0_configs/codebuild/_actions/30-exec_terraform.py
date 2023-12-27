@@ -1,16 +1,9 @@
 def default():
-    
-    task = {}
-    env_vars = []
-    shelloutconfigs = []
 
-    # This can be overided by env_vars in the resource add
-    # env_vars.append('config0-publish:::aws::simple_vpc')
-    shelloutconfigs.append('config0-publish:::terraform::resource_wrapper')
-
-    task['method'] = 'shelloutconfig'
-    task['metadata'] = {'env_vars': env_vars,
-                        'shelloutconfigs': shelloutconfigs
-                        }
+    task = {'method': 'shelloutconfig',
+            'metadata': {'env_vars': [],
+                         'shelloutconfigs': ['config0-hub:::terraform::resource_wrapper']
+                         }
+            }
 
     return task

@@ -40,7 +40,7 @@ labels:
      purpose: ci
 infrastructure:
    codebuild:
-       stack_name: config0-publish:::aws_codebuild
+       stack_name: config0-hub:::aws_codebuild
        arguments:
           aws_default_region: eu-west-1
           s3_bucket: flask-sample-private-codebuild-ci

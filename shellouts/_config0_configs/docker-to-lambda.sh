@@ -34,4 +34,3 @@ echo "DOCKER_TEMP_IMAGE=${DOCKER_TEMP_IMAGE}" >> .env
 
 docker run --rm -i --env-file .env $DOCKER_TEMP_IMAGE cp ${LAMBDA_PKG_DIR}/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${LAMBDA_PKG_NAME}.zip || exit 6
 rm -rf .env
-
