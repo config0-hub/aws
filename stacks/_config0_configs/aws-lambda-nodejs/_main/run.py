@@ -69,10 +69,10 @@ def run(stackargs):
     stack.parse.add_optional(key="debug")
 
     # declare execution groups
-    stack.add_execgroup("config0-hub:::aws::nodejs_to_lambda")
+    stack.add_execgroup("config0-publish:::aws::nodejs_to_lambda")
 
     # add substack
-    stack.add_substack('config0-hub:::aws_lambda')
+    stack.add_substack('config0-publish:::aws_lambda')
 
     # initialize variables
     stack.init_variables()

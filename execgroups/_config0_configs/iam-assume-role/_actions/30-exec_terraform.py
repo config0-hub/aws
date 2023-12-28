@@ -2,7 +2,7 @@ def default():
 
     task = {'method': 'shelloutconfig',
             'metadata': {'env_vars': [],
-                         'shelloutconfigs': ['config0-hub:::terraform::resource_wrapper']
+                         'shelloutconfigs': ['config0-publish:::terraform::resource_wrapper']
                          }
             }
 

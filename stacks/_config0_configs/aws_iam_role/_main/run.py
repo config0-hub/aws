@@ -32,11 +32,11 @@ def run(stackargs):
                              tags="tfvar,resource,db,runtime_settings",
                              types="str")
 
-    stack.add_execgroup("config0-hub:::aws::iam-role",
+    stack.add_execgroup("config0-publish:::aws::iam-role",
                         "tf_execgroup")
 
     # Add substack
-    stack.add_substack('config0-hub:::tf_executor')
+    stack.add_substack('config0-publish:::tf_executor')
 
     # Initialize
     stack.init_variables()

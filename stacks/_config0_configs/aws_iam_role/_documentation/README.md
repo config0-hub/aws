@@ -30,7 +30,7 @@ labels:
      product: iam
 infrastructure:
    iam-role:
-       stack_name: config0-hub:::aws_iam_role
+       stack_name: config0-publish:::aws_iam_role
        arguments:
           role_name: eval-config0-role
           iam_instance_profile: eval-config0-role

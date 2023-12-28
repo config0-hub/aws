@@ -25,7 +25,7 @@ def run(stackargs):
                              default=1800)
 
     # Add shelloutconfigs
-    stack.add_shelloutconfig('config0-hub:::aws::ec2_ami')
+    stack.add_shelloutconfig('config0-publish:::aws::ec2_ami')
 
     # init the stack namespace
     stack.init_variables()

@@ -15,7 +15,7 @@ def run(stackargs):
                              default="us-east-1")
 
     # Add shelloutconfigs
-    stack.add_shelloutconfig('config0-hub:::aws::ec2_ami')
+    stack.add_shelloutconfig('config0-publish:::aws::ec2_ami')
 
     # Initialize
     stack.init_variables()

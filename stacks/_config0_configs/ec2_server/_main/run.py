@@ -150,12 +150,12 @@ def run(stackargs):
                              default="private")
 
     # Add shelloutconfig dependencies
-    stack.add_shelloutconfig('config0-hub:::aws::ec2_server',
+    stack.add_shelloutconfig('config0-publish:::aws::ec2_server',
                              "ec2_server")
 
     # substacks for volumes
-    stack.add_substack('config0-hub:::ebs_volume')
-    stack.add_substack('config0-hub:::ebs_modify')
+    stack.add_substack('config0-publish:::ebs_volume')
+    stack.add_substack('config0-publish:::ebs_modify')
 
     # Initialize Variables in stack
     stack.init_variables()
