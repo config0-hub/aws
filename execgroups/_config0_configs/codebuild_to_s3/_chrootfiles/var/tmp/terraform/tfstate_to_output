@@ -2,7 +2,7 @@
 
 import os
 import json
-from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.resource.manage import to_jsonfile
 from config0_publisher.serialization import b64_encode
 
 terraform_state_file = os.environ.get("TERRAFORM_STATE_FILE","terraform.tfstate")

@@ -161,11 +161,6 @@ def run(stackargs):
     stack.parse.add_optional(key="codebuild_role",
                              default="config0-assume-poweruser")
 
-    # codebuild params use selectors later
-    stack.parse.add_optional(key="codebuild_basename",
-                            types="str",
-                            default="config0-iac")
-
     stack.parse.add_optional(key="compute_type",
                             types="str",
                             default="BUILD_GENERAL1_SMALL")
@@ -215,7 +210,6 @@ def run(stackargs):
                  'RUN_SHARE_DIR': stack.run_share_dir,
                  'CHROOTFILES_DEST_DIR': stack.run_share_dir,
                  'WORKING_DIR': stack.run_share_dir,
-                 'CODEBUILD_BASENAME': stack.codebuild_basename,
                  'BUILD_IMAGE': stack.build_image,
                  'BUILD_TIMEOUT': stack.build_timeout,
                  'COMPUTE_TYPE': stack.compute_type,

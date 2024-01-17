@@ -12,7 +12,7 @@ from time import sleep
 from config0_publisher.loggerly import Config0Logger
 from config0_publisher.cloud.awscli import AwsCli
 from config0_publisher.utilities import to_json
-from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.resource.manage import to_jsonfile
 from config0_publisher.utilities import id_generator
 
 class Main(AwsCli):

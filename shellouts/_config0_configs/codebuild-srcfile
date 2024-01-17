@@ -8,11 +8,11 @@ from time import sleep
 from ast import literal_eval
 
 from config0_publisher.loggerly import Config0Logger
-from config0_publisher.resource_manage import ResourceCmdHelper
+from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
 from config0_publisher.serialization import b64_encode
-from config0_publisher.resource_manage import to_jsonfile
+from config0_publisher.resource.manage import to_jsonfile
 from config0_publisher.utilities import id_generator
 from config0_publisher.fileutils import targz
 
@@ -66,8 +66,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
                                    set_must_exists=["tmp_bucket",
                                                     "upload_bucket",
                                                     "log_bucket"],
-                                   set_default_values={ "codebuild_basename":"config0-iac",
-                                                        "build_image":"aws/codebuild/standard:4.0",
+                                   set_default_values={ "build_image":"aws/codebuild/standard:4.0",
                                                         "build_timeout":3600,
                                                         "compute_type":"BUILD_GENERAL1_SMALL",
                                                         "image_type":"LINUX_CONTAINER",
@@ -186,7 +185,6 @@ class CodebuildSrcFile(ResourceCmdHelper):
         self._set_build_env_vars()
 
         self.buildparams = {"buildspec":self.get_buildspec(),
-                            "codebuild_basename":self.codebuild_basename,
                             "build_timeout":self.build_timeout}
 
         if self.build_env_vars:
