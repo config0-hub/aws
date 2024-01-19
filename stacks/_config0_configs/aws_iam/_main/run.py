@@ -54,16 +54,16 @@ def run(stackargs):
     stack = newStack(stackargs)
 
     stack.parse.add_required(key="iam_name",
-                             tags="resource,db,runtime_settings,tfvar",
+                             tags="resource,db,tf_runtime,tfvar",
                              types="str")
 
     stack.parse.add_required(key="policy_name",
-                             tags="resource,db,runtime_settings,tfvar",
+                             tags="resource,db,tf_runtime,tfvar",
                              types="str")
 
     stack.parse.add_optional(key="aws_default_region",
                              default="eu-west-1",
-                             tags="tfvar,db,resource,runtime_settings",
+                             tags="tfvar,db,resource,tf_runtime",
                              types="str")
 
     # if policy_hash is set, we ignore allows_hash and denies_hash

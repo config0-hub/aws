@@ -78,7 +78,7 @@ def run(stackargs):
 
     stack.parse.add_optional(key="aws_default_region",
                              default="eu-west-1",
-                             tags="tfvar,resource,db,runtime_settings",
+                             tags="tfvar,resource,db,tf_runtime",
                              types="str")
 
     # Add execgroup

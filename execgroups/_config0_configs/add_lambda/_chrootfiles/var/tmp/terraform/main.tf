@@ -1,6 +1,5 @@
 data "aws_caller_identity" "current" {}
 
-
 data "template_file" "policy" {
   template = base64decode(var.policy_template_hash)
   vars = {
