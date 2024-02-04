@@ -201,30 +201,34 @@ def run(stackargs):
                        os.path.join(stack.share_dir,
                                     stack.stateful_id))
 
-    _env_vars = { 'LAMBDA_PKG_NAME': stack.lambda_name,
-                 'PYTHON_VERSION': stack.runtime.split("python")[1],
-                 'S3_BUCKET': stack.s3_bucket,
-                 'STATEFUL_ID': stack.stateful_id,
-                 'TMP_BUCKET': stack.tmp_bucket,
-                 'SHARE_DIR': stack.share_dir,
-                 'RUN_SHARE_DIR': stack.run_share_dir,
-                 'CHROOTFILES_DEST_DIR': stack.run_share_dir,
-                 'WORKING_DIR': stack.run_share_dir,
-                 'BUILD_IMAGE': stack.build_image,
-                 'COMPUTE_TYPE': stack.compute_type,
-                 'IMAGE_TYPE': stack.image_type,
-                 'BUILDSPEC_HASH': _get_buildspec_hash_v2(stack)
-                  }
-
-    env_vars = {
-        'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {"env_vars": _env_vars} ),
-        'APP_NAME':"lambda",
-        'APP_DIR':"var/tmp/lambda",
+    _env_vars = {
+        'LAMBDA_PKG_NAME': stack.lambda_name,
+        'PYTHON_VERSION': stack.runtime.split("python")[1],
+        'S3_BUCKET': stack.s3_bucket,
+        'STATEFUL_ID': stack.stateful_id,
+        'TMP_BUCKET': stack.tmp_bucket,
+        'SHARE_DIR': stack.share_dir,
+        'RUN_SHARE_DIR': stack.run_share_dir,
+        'CHROOTFILES_DEST_DIR': stack.run_share_dir,
+        'WORKING_DIR': stack.run_share_dir,
+        'BUILD_IMAGE': stack.build_image,
+        'COMPUTE_TYPE': stack.compute_type,
+        'IMAGE_TYPE': stack.image_type,
+        'BUILDSPEC_HASH': _get_buildspec_hash_v2(stack),
         'BUILD_TIMEOUT': stack.build_timeout
     }
 
-    inputargs = {"name": stack.lambda_name,
-                 "env_vars": json.dumps(env_vars)}
+    # we need to declare app initially - lambda app
+    env_vars = {
+        'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {"env_vars": _env_vars} ),
+        'APP_NAME':"lambda",
+        'APP_DIR':"var/tmp/lambda"
+    }
+
+    inputargs = {
+        "name": stack.lambda_name,
+        "env_vars": json.dumps(env_vars)
+    }
 
     if stack.cloud_tags_hash:
         inputargs["cloud_tags_hash"] = stack.cloud_tags_hash
@@ -237,14 +241,16 @@ def run(stackargs):
     else:
         s3_key = stack.s3_key
 
-    arguments = {"s3_key": s3_key,
-                 "lambda_name": stack.lambda_name,
-                 "s3_bucket": stack.s3_bucket,
-                 "handler": stack.handler,
-                 "runtime": stack.runtime,
-                 "memory_size": stack.memory_size,
-                 "lambda_timeout": stack.lambda_timeout,
-                 "aws_default_region": stack.aws_default_region}
+    arguments = {
+        "s3_key": s3_key,
+        "lambda_name": stack.lambda_name,
+        "s3_bucket": stack.s3_bucket,
+        "handler": stack.handler,
+        "runtime": stack.runtime,
+        "memory_size": stack.memory_size,
+        "lambda_timeout": stack.lambda_timeout,
+        "aws_default_region": stack.aws_default_region
+    }
 
     if stack.get_attr("policy_template_hash"):
         arguments["policy_template_hash"] = stack.policy_template_hash

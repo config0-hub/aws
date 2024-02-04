@@ -11,10 +11,10 @@ from config0_publisher.loggerly import Config0Logger
 from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
-from config0_publisher.serialization import b64_encode
-from config0_publisher.resource.manage import to_jsonfile
 from config0_publisher.utilities import id_generator
 from config0_publisher.fileutils import targz
+#from config0_publisher.serialization import b64_encode
+#from config0_publisher.resource.manage import to_jsonfile
 
 class CodebuildSrcFile(ResourceCmdHelper):
 
@@ -25,44 +25,10 @@ class CodebuildSrcFile(ResourceCmdHelper):
         self.logger = Config0Logger(self.classname,
                                     logcategory="cloudprovider")
 
-        try:
-            config0_buildparams = b64_decode(os.environ["CONFIG0_BUILDPARMS_HASH"])
-        except:
-            config0_buildparams = None
-
-        if config0_buildparams:
-            self.build_inputargs = config0_buildparams.get("inputargs")
-            self.build_env_vars = config0_buildparams.get("env_vars")
-            self.build_variables = config0_buildparams.get("set_variables")
-        else:
-            self.build_variables = None
-            self.build_inputargs = None
-            self.build_env_vars = None
-
-        if not self.build_variables:
-            self.build_variables=["buildspec_hash"]
-        else:
-            self.build_variables.append("buildspec_hash")
-
-        self.app_name = self.build_inputargs.get("app_name")
-
-        if not self.app_name:
-            self.app_name = self.build_env_vars.get("APP_NAME")
-
-        if not self.app_name:
-            raise Exception('ResourceCmdHelper: "app_name" needs to be set')
-
-        self.app_dir = self.build_inputargs.get("app_dir")
-
-        if not self.app_dir:
-            self.app_dir = self.build_env_vars.get("APP_DIR")
-
         ResourceCmdHelper.__init__(self,
-                                   app_name=self.app_name,
-                                   app_dir=self.app_dir,
-                                   inputargs=self.build_inputargs,
-                                   set_env_vars=self.build_env_vars,
-                                   set_variables=self.build_variables,
+                                   main_env_var_key="CONFIG0_BUILDPARMS_HASH",
+                                   app_name=os.environ["APP_NAME"],
+                                   app_dir=os.environ["APP_DIR"],
                                    set_must_exists=["tmp_bucket",
                                                     "upload_bucket",
                                                     "log_bucket"],
