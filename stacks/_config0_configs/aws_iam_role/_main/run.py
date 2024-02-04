@@ -75,6 +75,8 @@ def run(stackargs):
                            tags="tfvar", 
                            types="str")
 
+    stack.set_variable("timeout",600)
+
     tf = TFConstructor(stack=stack,
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,

@@ -67,7 +67,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
                                                     "upload_bucket",
                                                     "log_bucket"],
                                    set_default_values={ "build_image":"aws/codebuild/standard:4.0",
-                                                        "build_timeout":3600,
+                                                        "build_timeout":500,
                                                         "compute_type":"BUILD_GENERAL1_SMALL",
                                                         "image_type":"LINUX_CONTAINER",
                                                         "remote_stateful_bucket":None,

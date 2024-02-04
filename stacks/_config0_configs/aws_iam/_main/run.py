@@ -92,6 +92,8 @@ def run(stackargs):
                        tags="tfvar", 
                        types="str")
 
+    stack.set_variable("timeout",600)
+
     stack.verify_variables()
 
     # use the terraform constructor

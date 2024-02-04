@@ -104,6 +104,8 @@ def run(stackargs):
     else:
         lambda_env_vars = {}
 
+    stack.set_variable("timeout",600)
+
     stack.set_variable("lambda_env_vars",
                        lambda_env_vars,
                        tags="tfvar",
