@@ -26,10 +26,10 @@ phases:
   pre_build:
     on-failure: ABORT
     commands:
-      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.tar.gz --quiet
+      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
       - mkdir -p {run_share_dir}
-      - tar xfz {tmpdir}/{stateful_id}.tar.gz -C {run_share_dir}/
-      - rm -rf {tmpdir}/{stateful_id}.tar.gz
+      - unzip -o {tmpdir}/{stateful_id}.zip -d {run_share_dir}/
+      - rm -rf {tmpdir}/{stateful_id}.zip 
       - echo "Creating a virtual environment..."
       - cd {run_share_dir}/ && python3 -m venv venv
 '''.format(tmpdir="/tmp",
@@ -79,11 +79,11 @@ phases:
   pre_build:
     on-failure: ABORT
     commands:
-      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.tar.gz --quiet
+      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
       - mkdir -p {share_dir}
       - mkdir -p {run_share_dir}
-      - tar xfz {tmpdir}/{stateful_id}.tar.gz -C {run_share_dir}/
-      - rm -rf {tmpdir}/{stateful_id}.tar.gz
+      - unzip -o {tmpdir}/{stateful_id}.zip -d {run_share_dir}/
+      - rm -rf {tmpdir}/{stateful_id}.zip 
       - export ROLE_ARN=$(aws iam get-role --role-name {role_name} --query 'Role.Arn' --output text)
       - export ASSUME_ROLE_OUTPUT_HASH=$(aws sts assume-role --role-arn $ROLE_ARN --role-session-name "session-{stateful_id}" --duration-seconds 1800 | base64 -w 0)
       - export AWS_ACCESS_KEY_ID=$(echo "$ASSUME_ROLE_OUTPUT_HASH" | base64 -d | jq -r '.Credentials.AccessKeyId')
