@@ -1,18 +1,15 @@
 #!/usr/bin/env python
-#
 
 import os
-import json
-import sys
-from time import sleep
-from ast import literal_eval
 
 from config0_publisher.loggerly import Config0Logger
 from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
-from config0_publisher.utilities import id_generator
-from config0_publisher.fileutils import targz
+from config0_publisher.fileutils import zipcli
+
+#from config0_publisher.utilities import id_generator
+#from config0_publisher.fileutils import targz
 #from config0_publisher.serialization import b64_encode
 #from config0_publisher.resource.manage import to_jsonfile
 
@@ -41,13 +38,8 @@ class CodebuildSrcFile(ResourceCmdHelper):
                                                         "stateful_id":None,
                                                         "buildspec_file":"buildspec.yml"})
 
-        if not self.stateful_id:
-            self.stateful_id = id_generator(10, 
-                                            chars=string.ascii_lowercase)
 
-            self.logger.warn("creating random stateful_id {}".format(self.stateful_id))
-
-    def _get_abs_app_dir_path(self):
+    def _get_fqn_app_dir_path(self):
 
         self.list_files_share_dir()
         self.list_files_exec_dir()
@@ -89,7 +81,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
             return b64_decode(self.buildspec_hash)
 
         # get repo file and read contents
-        abs_app_dir = self._get_abs_app_dir_path()
+        abs_app_dir = self._get_fqn_app_dir_path()
 
         buildspec_file = os.path.join(abs_app_dir,
                                       "src",
@@ -134,15 +126,14 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
     def _tar_upload_s3(self):
 
-        abs_app_dir = self._get_abs_app_dir_path()
+        abs_app_dir = self._get_fqn_app_dir_path()
 
-        targz(abs_app_dir,
-              self.tmpdir,
-              self.stateful_id)
+        srcfile = zipcli(abs_app_dir,
+                         self.tmpdir,
+                         self.stateful_id,
+                         exit_error=True)
 
-        cmd = "aws s3 cp {tmpdir}/{stateful_id}.tar.gz s3://{upload_bucket}/{stateful_id}".format(tmpdir=self.tmpdir,
-                                                                                                  upload_bucket=self.buildparams["build_env_vars"]["UPLOAD_BUCKET"],
-                                                                                                  stateful_id=self.stateful_id)
+        cmd = f'aws s3 cp {srcfile} s3://{self.buildparams["build_env_vars"]["UPLOAD_BUCKET"]}/{self.stateful_id}'
 
         return self.execute(cmd)
 

@@ -221,6 +221,8 @@ def run(stackargs):
     # we need to declare app initially - lambda app
     env_vars = {
         'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {"env_vars": _env_vars} ),
+        'CHROOTFILES_DEST_DIR': stack.run_share_dir,
+        'WORKING_DIR': stack.run_share_dir,
         'APP_NAME':"lambda",
         'APP_DIR':"var/tmp/lambda"
     }
