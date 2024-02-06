@@ -93,6 +93,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
         return file_contents
 
     def _set_build_env_vars(self):
+
         # testtest456
         #kwargs["build_env_vars"]["S3_BUCKET"] = "app-env.lambda.iac.williaumwu.f3433"
         #kwargs["build_env_vars"]["LAMBDA_PKG_NAME"] = "foo-lambda"
@@ -183,7 +184,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         codebuild_helper = CodebuildResourceHelper(set_env_vars=_set_env_vars,
                                                    **self.buildparams)
-        codebuild_helper.run(spare_env_vars=False)
+        codebuild_helper.run(sparse_env_vars=False)
 
         if codebuild_helper.results.get("output"):
             self.append_log(codebuild_helper.results["output"])
