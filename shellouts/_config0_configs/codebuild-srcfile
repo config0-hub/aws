@@ -94,10 +94,6 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
     def _set_build_env_vars(self):
 
-        # testtest456
-        #kwargs["build_env_vars"]["S3_BUCKET"] = "app-env.lambda.iac.williaumwu.f3433"
-        #kwargs["build_env_vars"]["LAMBDA_PKG_NAME"] = "foo-lambda"
-
         if not self.build_env_vars:
             if "build_env_vars" in self.syncvars.main_vars:
                 self.build_env_vars = self.syncvars.main_vars["build_env_vars"]
