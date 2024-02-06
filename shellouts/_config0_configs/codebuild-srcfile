@@ -94,8 +94,15 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
     def _set_build_env_vars(self):
 
+        # testtest456
+        #kwargs["build_env_vars"]["S3_BUCKET"] = "app-env.lambda.iac.williaumwu.f3433"
+        #kwargs["build_env_vars"]["LAMBDA_PKG_NAME"] = "foo-lambda"
+
         if not self.build_env_vars:
-            self.build_env_vars = {}
+            if "build_env_vars" in self.main_vars:
+                self.build_env_vars = self.main_vars["build_env_vars"]
+            else:
+                self.build_env_vars = {}
 
         self.build_env_vars["TMPDIR"] = self.tmpdir
         self.build_env_vars["SHARE_DIR"] = self.share_dir
@@ -141,8 +148,10 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         self._set_build_env_vars()
 
-        self.buildparams = {"buildspec":self.get_buildspec(),
-                            "build_timeout":self.build_timeout}
+        self.buildparams = {
+            "buildspec":self.get_buildspec(),
+            "build_timeout":self.build_timeout
+        }
 
         if self.build_env_vars:
             self.buildparams["build_env_vars"] = self.build_env_vars
@@ -165,6 +174,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         _set_env_vars = { "stateful_id":True,
                           "tmp_bucket":True,
+                          "tmp_bucket":True,
                           "log_bucket":True,
                           "app_dir":True,
                           "remote_stateful_bucket":None,
@@ -174,7 +184,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         codebuild_helper = CodebuildResourceHelper(set_env_vars=_set_env_vars,
                                                    **self.buildparams)
-        codebuild_helper.run()
+        codebuild_helper.run(spare_env_vars=False)
 
         if codebuild_helper.results.get("output"):
             self.append_log(codebuild_helper.results["output"])

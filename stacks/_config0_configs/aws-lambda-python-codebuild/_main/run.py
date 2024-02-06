@@ -202,12 +202,15 @@ def run(stackargs):
                                     stack.stateful_id))
 
     _env_vars = {
+        'DOCKER_TEMP_IMAGE': f'{stack.lambda_name}-temp',
         'LAMBDA_PKG_NAME': stack.lambda_name,
+        'LAMBDA_PKG_DIR': "/var/tmp/package/lambda",
         'PYTHON_VERSION': stack.runtime.split("python")[1],
         'S3_BUCKET': stack.s3_bucket,
         'STATEFUL_ID': stack.stateful_id,
         'TMP_BUCKET': stack.tmp_bucket,
         'SHARE_DIR': stack.share_dir,
+        'WORKING_SUBDIR':'var/tmp/lambda',
         'RUN_SHARE_DIR': stack.run_share_dir,
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
         'WORKING_DIR': stack.run_share_dir,
@@ -219,8 +222,12 @@ def run(stackargs):
     }
 
     # we need to declare app initially - lambda app
+    # testtest456
     env_vars = {
-        'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {"env_vars": _env_vars} ),
+        'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {
+            "env_vars": _env_vars,
+            "build_env_vars":_env_vars}
+        ),
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
         'WORKING_DIR': stack.run_share_dir,
         'APP_NAME':"lambda",
