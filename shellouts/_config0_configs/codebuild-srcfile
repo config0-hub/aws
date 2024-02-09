@@ -81,9 +81,8 @@ class CodebuildSrcFile(ResourceCmdHelper):
             return b64_decode(self.buildspec_hash)
 
         # get repo file and read contents
-        abs_app_dir = self._get_fqn_app_dir_path()
 
-        buildspec_file = os.path.join(abs_app_dir,
+        buildspec_file = os.path.join(self._get_fqn_app_dir_path(),
                                       "src",
                                       self.buildspec_file)
 
