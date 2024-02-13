@@ -571,7 +571,7 @@ class Main(AwsCli):
                                                               "AWS_DEFAULT_REGION":self.aws_default_region})
 
         # Destroy is special and is at the root level
-        resource["destroy"] = {"shelloutconfig":self.shelloutconfig}
+        resource["destroy_params"] = {"shelloutconfig":self.shelloutconfig}
 
         _destroy_env_vars = {"NAME":name,
                              "CONFIRM":confirm,
@@ -582,7 +582,7 @@ class Main(AwsCli):
         if resource.get("spot_req_id"): 
             _destroy_env_vars["SPOT_REQ_ID"] = resource["spot_req_id"]
 
-        resource["destroy"]["env_vars"] = json.dumps(_destroy_env_vars)
+        resource["destroy_params"]["env_vars"] = json.dumps(_destroy_env_vars)
 
         self.tempdir.delete()
 
