@@ -8,36 +8,37 @@ from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
 from config0_publisher.fileutils import zipcli
 
-#from config0_publisher.utilities import id_generator
-#from config0_publisher.fileutils import targz
-#from config0_publisher.serialization import b64_encode
-#from config0_publisher.resource.manage import to_jsonfile
-
 class CodebuildSrcFile(ResourceCmdHelper):
 
     def __init__(self):  
 
         self.classname = 'CodebuildSrcFile'
 
-        self.logger = Config0Logger(self.classname,
-                                    logcategory="cloudprovider")
+        self.logger = Config0Logger(
+            self.classname,
+            logcategory="cloudprovider"
+        )
 
-        ResourceCmdHelper.__init__(self,
-                                   main_env_var_key="CONFIG0_BUILDPARMS_HASH",
-                                   app_name=os.environ["APP_NAME"],
-                                   app_dir=os.environ["APP_DIR"],
-                                   set_must_exists=["tmp_bucket",
-                                                    "upload_bucket",
-                                                    "log_bucket"],
-                                   set_default_values={ "build_image":"aws/codebuild/standard:4.0",
-                                                        "build_timeout":500,
-                                                        "compute_type":"BUILD_GENERAL1_SMALL",
-                                                        "image_type":"LINUX_CONTAINER",
-                                                        "remote_stateful_bucket":None,
-                                                        "upload_bucket":None,
-                                                        "stateful_id":None,
-                                                        "buildspec_file":"buildspec.yml"})
-
+        ResourceCmdHelper.__init__(
+            self,
+            main_env_var_key="CONFIG0_BUILDPARMS_HASH",
+            app_name=os.environ["APP_NAME"],
+            app_dir=os.environ["APP_DIR"],
+            set_must_exists=[
+                "tmp_bucket",
+                "upload_bucket",
+                "log_bucket"],
+            set_default_values={
+                "build_image":"aws/codebuild/standard:4.0",
+                "build_timeout":500,
+                "compute_type":"BUILD_GENERAL1_SMALL",
+                "image_type":"LINUX_CONTAINER",
+                "remote_stateful_bucket":None,
+                "upload_bucket":None,
+                "stateful_id":None,
+                "buildspec_file":"buildspec.yml"
+            }
+        )
 
     def _get_fqn_app_dir_path(self):
 
