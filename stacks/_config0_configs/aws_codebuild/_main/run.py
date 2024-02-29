@@ -289,7 +289,7 @@ def run(stackargs):
 
     if stack.get_attr("subnet_ids"):
         stack.set_variable("subnet_ids",
-                           sorted(stack.to_list(stack.subnet_ids))[0],
+                           sorted(stack.to_list(stack.subnet_ids)),
                            tags="tfvar",
                            types="list")
 
