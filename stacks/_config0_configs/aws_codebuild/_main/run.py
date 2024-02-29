@@ -255,6 +255,19 @@ def run(stackargs):
                              tags="tfvar,resource,db,tf_runtime",
                              types="str")
 
+    stack.parse.add_optional(key="subnet_ids",
+                             default="null")
+
+    stack.parse.add_optional(key="vpc_id",
+                             default="null",
+                             tags="tfvar,db",
+                             types="str")
+
+    stack.parse.add_required(key="security_group_id",
+                             default="null",
+                             tags="tfvar,db",
+                             types="str")
+
     # Add execgroup
     stack.add_execgroup("config0-publish:::aws::codebuild",
                         "tf_execgroup")
@@ -274,8 +287,19 @@ def run(stackargs):
                            tags="tfvar",
                            types="str")
 
-    if stack.get_attr("codebuild_env_vars_hash"):
+    if stack.get_attr("subnet_ids"):
+        stack.set_variable("subnet_ids",
+                           sorted(stack.to_list(stack.subnet_ids))[0],
+                           tags="tfvar",
+                           types="list")
 
+    if stack.get_attr("security_group_id"):
+        stack.set_variable("security_group_ids",
+                           [stack.security_group_id],
+                           tags="tfvar",
+                           types="list")
+
+    if stack.get_attr("codebuild_env_vars_hash"):
         stack.set_variable("codebuild_env_vars",
                            stack.b64_decode(stack.codebuild_env_vars_hash),
                            tags="tfvar",
