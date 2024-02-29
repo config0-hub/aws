@@ -61,3 +61,15 @@ variable "buildspec_hash" {
   type    = string
   description = "buildspec template as a base64 hash"
 }
+
+variable "vpc_id" {
+  default = null
+}
+
+variable "subnet_ids" {
+  default = null
+}
+
+variable "security_group_ids" {
+  default = null
+}

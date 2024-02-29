@@ -98,6 +98,15 @@ resource "aws_codebuild_project" "default" {
     location = var.s3_bucket_cache
   }
 
+  dynamic "vpc_config" {
+    for_each = var.vpc_id != null && var.subnet_ids != null && var.security_group_ids != null ? [1] : []
+    content {
+      vpc_id     = var.vpc_id
+      subnets    = var.subnet_ids
+      security_group_ids  = var.security_group_ids
+    }
+  }
+
   environment {
     compute_type = var.compute_type
     image        = var.build_image
@@ -138,5 +147,3 @@ resource "aws_codebuild_project" "default" {
   )
 
 }
-
-
