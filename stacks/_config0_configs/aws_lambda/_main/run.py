@@ -104,7 +104,10 @@ def run(stackargs):
     else:
         lambda_env_vars = {}
 
-    stack.set_variable("timeout",600)
+    # purposely set timeout long since we need
+    # it to run in codebuld rather than a lambda function
+    # b/c it lambda function sometimes doesn't have enough space
+    stack.set_variable("timeout",1800)
 
     stack.set_variable("lambda_env_vars",
                        lambda_env_vars,
