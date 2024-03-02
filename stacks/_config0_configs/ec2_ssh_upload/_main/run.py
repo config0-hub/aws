@@ -2,39 +2,52 @@ from config0_publisher.terraform import TFConstructor
 
 def _get_ssh_public_key(stack):
 
+    _lookup = {"must_be_one": True,
+               "resource_type": "ssh_key_pair",
+               "name": stack.key_name}
     try:
-        _lookup = {"must_be_one": True,
-                   "resource_type": "ssh_key_pair",
-                   "name": stack.key_name}
         results = stack.get_resource(decrypt=True,
                                      **_lookup)[0]
     except:
         results = None
 
+    if results:
+        stack.logger.debug(f"found public key {_lookup}")
+
     if not results:
-       try:
-            _lookup = {"must_be_one": True,
-                       "resource_type": "ssh_public_key",
-                       "name": stack.key_name}
+
+        _lookup = {"must_be_one": True,
+                   "resource_type": "ssh_public_key",
+                   "name": stack.key_name}
+
+        try:
             results = stack.get_resource(decrypt=True,
                                          **_lookup)[0]
-       except:
-           results = None
+        except:
+            results = None
+
+        if results:
+            stack.logger.debug(f"found public key {_lookup}")
 
     if not results:
 
        # inputvars are more generic so
        # we only take values key field
+
+       _lookup = {"must_be_one": True,
+                  "resource_type": "inputvars",
+                  "name": stack.key_name,
+                  "fields": ["values"],
+                  "flatten": True}
+
        try:
-            _lookup = {"must_be_one": True,
-                       "resource_type": "inputvars",
-                       "name": stack.key_name,
-                       "fields":["values"],
-                       "flatten":True}
             results = stack.get_resource(decrypt=True,
                                          **_lookup)[0]
        except:
            results = None
+
+       if results:
+           stack.logger.debug(f"found public key {_lookup}")
 
     if not results:
         raise Exception("could not retrieve public key")
@@ -50,7 +63,6 @@ def _get_ssh_public_key(stack):
         return stack.b64_encode(public_key)
 
     raise Exception("could not retrieve public key/public key hash from query")
-
 
 def run(stackargs):
 
