@@ -222,7 +222,6 @@ def run(stackargs):
     }
 
     # we need to declare app initially - lambda app
-    # testtest456
     env_vars = {
         'CONFIG0_BUILDPARMS_HASH': stack.b64_encode( {
             "env_vars": _env_vars,
