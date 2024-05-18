@@ -1,0 +1,39 @@
+ARG lang_version=12
+FROM node:${lang_version} as build
+
+# Create app directory
+WORKDIR /usr/src/app
+
+COPY src/ .
+
+RUN chown root:root -R src
+RUN chmod 755 -R src
+RUN npm install
+
+FROM public.ecr.aws/docker/library/alpine:3.18.4
+
+RUN apk add --no-cache python3 py3-pip && \
+    rm -rf /var/cache/apk/*
+
+RUN pip3 install --upgrade pip 
+RUN pip3 install --no-cache-dir awscli 
+
+RUN apk add --no-cache zip && \
+    rm -rf /var/cache/apk/*
+
+# set these arguments through
+# docker build arguments
+ARG pkg_name=PleaseSetPkgName
+ARG s3_bucket=PleaseSetS3Bucket
+
+ENV LAMBDA_PKG_NAME=$pkg_name
+ENV S3_BUCKET=$s3_bucket
+
+COPY --from=build /usr/src/app /var/tmp/app
+
+RUN mkdir -p /var/tmp/package/lambda && \
+    cd /var/tmp/app && \
+    zip -r9 /var/tmp/package/lambda/$LAMBDA_PKG_NAME . 
+
+ENTRYPOINT ["aws", "s3" ]
+

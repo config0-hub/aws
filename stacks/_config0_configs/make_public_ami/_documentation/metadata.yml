@@ -1,0 +1,12 @@
+desc: This will make an ami public.
+release: 0.0.1
+categories: 
+   - aws
+   - ami
+tags:
+   - aws
+   - ami
+   - ec2
+   - ami
+   - images
+   - imaging

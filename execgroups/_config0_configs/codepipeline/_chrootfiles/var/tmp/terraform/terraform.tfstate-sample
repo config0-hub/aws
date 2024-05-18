@@ -1,0 +1,448 @@
+{
+  "version": 4,
+  "terraform_version": "0.14.10",
+  "serial": 170,
+  "lineage": "2c270e40-cc84-860d-b8cc-ae590b7fe832",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "assume_role",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "1271059252",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"sts:AssumeRole\",\n      \"Principal\": {\n        \"Service\": [\n          \"codepipeline.amazonaws.com\",\n          \"codebuild.amazonaws.com\"\n        ]\n      }\n    }\n  ]\n}",
+            "override_json": null,
+            "policy_id": null,
+            "source_json": null,
+            "statement": [
+              {
+                "actions": [
+                  "sts:AssumeRole"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [
+                  {
+                    "identifiers": [
+                      "codebuild.amazonaws.com",
+                      "codepipeline.amazonaws.com"
+                    ],
+                    "type": "Service"
+                  }
+                ],
+                "resources": [],
+                "sid": ""
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "aws_iam_policy_document",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "1472654348",
+            "json": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"AllowLogging\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"logs:PutLogEvents\",\n        \"logs:CreateLogStream\",\n        \"logs:CreateLogGroup\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowAccessToArtifactsInS3\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"s3:*\",\n      \"Resource\": [\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci/*\",\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci\"\n      ]\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageResourcesItCreates\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"s3:PutObject\",\n      \"Resource\": [\n        \"arn:aws:s3:::elasticbeanstalk*\",\n        \"arn:aws:s3:::codepipeline*\"\n      ]\n    },\n    {\n      \"Sid\": \"AllowCodePipelinToRunCodeDeploy\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"codedeploy:RegisterApplicationRevision\",\n        \"codedeploy:GetDeploymentConfig\",\n        \"codedeploy:GetDeployment\",\n        \"codedeploy:GetApplicationRevision\",\n        \"codedeploy:CreateDeployment\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToSeeResources\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"sns:ListSubscriptionsByTopic\",\n        \"rds:DescribeOrderableDBInstanceOptions\",\n        \"rds:DescribeDBInstances\",\n        \"elasticloadbalancing:DescribeLoadBalancers\",\n        \"elasticbeanstalk:UpdateEnvironment\",\n        \"elasticbeanstalk:DescribeEvents\",\n        \"elasticbeanstalk:DescribeEnvironments\",\n        \"elasticbeanstalk:DescribeApplicationVersions\",\n        \"elasticbeanstalk:CreateApplicationVersion\",\n        \"ec2:DescribeVpcs\",\n        \"ec2:DescribeSubnets\",\n        \"ec2:DescribeSecurityGroups\",\n        \"ec2:DescribeKeyPairs\",\n        \"ec2:DescribeInstances\",\n        \"ec2:DescribeImages\",\n        \"ec2:DescribeAddresses\",\n        \"cloudformation:UpdateStack\",\n        \"cloudformation:GetTemplate\",\n        \"cloudformation:DescribeStacks\",\n        \"cloudformation:DescribeStackResources\",\n        \"cloudformation:DescribeStackResource\",\n        \"cloudformation:DescribeStackEvents\",\n        \"autoscaling:SuspendProcesses\",\n        \"autoscaling:ResumeProcesses\",\n        \"autoscaling:DescribeScalingActivities\",\n        \"autoscaling:DescribeLaunchConfigurations\",\n        \"autoscaling:DescribeAutoScalingGroups\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToInvokeLambdaFunctions\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"lambda:listfunctions\",\n        \"lambda:invokefunction\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageBeanstalkS3Artifacts\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:PutObjectAcl\",\n        \"s3:ListBucket\",\n        \"s3:GetObjectAcl\",\n        \"s3:GetBucketPolicy\",\n        \"s3:DeleteObject\"\n      ],\n      \"Resource\": \"arn:aws:s3:::elasticbeanstalk*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageCodeBuildJobs\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"codebuild:StopBuild\",\n        \"codebuild:StartBuild\",\n        \"codebuild:ListProjects\",\n        \"codebuild:ListBuildsForProject\",\n        \"codebuild:ListBuilds\",\n        \"codebuild:BatchGetProjects\",\n        \"codebuild:BatchGetBuilds\"\n      ],\n      \"Resource\": \"*\"\n    }\n  ]\n}",
+            "override_json": null,
+            "policy_id": null,
+            "source_json": null,
+            "statement": [
+              {
+                "actions": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "*"
+                ],
+                "sid": "AllowLogging"
+              },
+              {
+                "actions": [
+                  "s3:*"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:s3:::flask-sample-private-codebuild-ci",
+                  "arn:aws:s3:::flask-sample-private-codebuild-ci/*"
+                ],
+                "sid": "AllowAccessToArtifactsInS3"
+              },
+              {
+                "actions": [
+                  "s3:PutObject"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:s3:::codepipeline*",
+                  "arn:aws:s3:::elasticbeanstalk*"
+                ],
+                "sid": "AllowCodePipelineToManageResourcesItCreates"
+              },
+              {
+                "actions": [
+                  "codedeploy:CreateDeployment",
+                  "codedeploy:GetApplicationRevision",
+                  "codedeploy:GetDeployment",
+                  "codedeploy:GetDeploymentConfig",
+                  "codedeploy:RegisterApplicationRevision"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "*"
+                ],
+                "sid": "AllowCodePipelinToRunCodeDeploy"
+              },
+              {
+                "actions": [
+                  "autoscaling:DescribeAutoScalingGroups",
+                  "autoscaling:DescribeLaunchConfigurations",
+                  "autoscaling:DescribeScalingActivities",
+                  "autoscaling:ResumeProcesses",
+                  "autoscaling:SuspendProcesses",
+                  "cloudformation:DescribeStackEvents",
+                  "cloudformation:DescribeStackResource",
+                  "cloudformation:DescribeStackResources",
+                  "cloudformation:DescribeStacks",
+                  "cloudformation:GetTemplate",
+                  "cloudformation:UpdateStack",
+                  "ec2:DescribeAddresses",
+                  "ec2:DescribeImages",
+                  "ec2:DescribeInstances",
+                  "ec2:DescribeKeyPairs",
+                  "ec2:DescribeSecurityGroups",
+                  "ec2:DescribeSubnets",
+                  "ec2:DescribeVpcs",
+                  "elasticbeanstalk:CreateApplicationVersion",
+                  "elasticbeanstalk:DescribeApplicationVersions",
+                  "elasticbeanstalk:DescribeEnvironments",
+                  "elasticbeanstalk:DescribeEvents",
+                  "elasticbeanstalk:UpdateEnvironment",
+                  "elasticloadbalancing:DescribeLoadBalancers",
+                  "rds:DescribeDBInstances",
+                  "rds:DescribeOrderableDBInstanceOptions",
+                  "sns:ListSubscriptionsByTopic"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "*"
+                ],
+                "sid": "AllowCodePipelineToSeeResources"
+              },
+              {
+                "actions": [
+                  "lambda:invokefunction",
+                  "lambda:listfunctions"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "*"
+                ],
+                "sid": "AllowCodePipelineToInvokeLambdaFunctions"
+              },
+              {
+                "actions": [
+                  "s3:DeleteObject",
+                  "s3:GetBucketPolicy",
+                  "s3:GetObjectAcl",
+                  "s3:ListBucket",
+                  "s3:PutObjectAcl"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "arn:aws:s3:::elasticbeanstalk*"
+                ],
+                "sid": "AllowCodePipelineToManageBeanstalkS3Artifacts"
+              },
+              {
+                "actions": [
+                  "codebuild:BatchGetBuilds",
+                  "codebuild:BatchGetProjects",
+                  "codebuild:ListBuilds",
+                  "codebuild:ListBuildsForProject",
+                  "codebuild:ListProjects",
+                  "codebuild:StartBuild",
+                  "codebuild:StopBuild"
+                ],
+                "condition": [],
+                "effect": "Allow",
+                "not_actions": [],
+                "not_principals": [],
+                "not_resources": [],
+                "principals": [],
+                "resources": [
+                  "*"
+                ],
+                "sid": "AllowCodePipelineToManageCodeBuildJobs"
+              }
+            ],
+            "version": "2012-10-17"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_codepipeline",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:codepipeline:eu-west-1:10923413412341:flask-sample-private-pipeline",
+            "artifact_store": [
+              {
+                "encryption_key": [],
+                "location": "flask-sample-private-codebuild-ci",
+                "region": "",
+                "type": "S3"
+              }
+            ],
+            "id": "flask-sample-private-pipeline",
+            "name": "flask-sample-private-pipeline",
+            "role_arn": "arn:aws:iam::10923413412341:role/flask-sample-private-pipeline-role",
+            "stage": [
+              {
+                "action": [
+                  {
+                    "category": "Source",
+                    "configuration": {
+                      "Branch": "ci",
+                      "Owner": "git-username",
+                      "Repo": "flask_sample-private"
+                    },
+                    "input_artifacts": [],
+                    "name": "Source",
+                    "output_artifacts": [
+                      "source_output"
+                    ],
+                    "owner": "ThirdParty",
+                    "provider": "GitHub",
+                    "region": "",
+                    "role_arn": "",
+                    "run_order": 1,
+                    "version": "1"
+                  }
+                ],
+                "name": "Source"
+              },
+              {
+                "action": [
+                  {
+                    "category": "Build",
+                    "configuration": {
+                      "ProjectName": "flask-sample-private"
+                    },
+                    "input_artifacts": [
+                      "source_output"
+                    ],
+                    "name": "Build",
+                    "output_artifacts": [],
+                    "owner": "AWS",
+                    "provider": "CodeBuild",
+                    "region": "",
+                    "role_arn": "",
+                    "run_order": 1,
+                    "version": "1"
+                  }
+                ],
+                "name": "Build"
+              }
+            ],
+            "tags": {}
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_codepipeline_webhook",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "authentication": "GITHUB_HMAC",
+            "authentication_configuration": [
+              {
+                "allowed_ip_range": "",
+                "secret_token": "secret123"
+              }
+            ],
+            "filter": [
+              {
+                "json_path": "$.ref",
+                "match_equals": "refs/heads/{Branch}"
+              }
+            ],
+            "id": "arn:aws:codepipeline:eu-west-1:10923413412341:webhook:flask-sample-private-pipeline-GitHub-webhook",
+            "name": "flask-sample-private-pipeline-GitHub-webhook",
+            "tags": {},
+            "target_action": "Source",
+            "target_pipeline": "flask-sample-private-pipeline",
+            "url": "https://eu-west-1.webhooks.aws/trigger?t=eyJlbmNyeXB0ZWREYXRhIjoiWlphdUZPKzd1VEtIUk90NEEwUXU0WVVzK1lFd3FFM0Ftc1E5ME00MTBlNG5qRUJjVnVMS2p4cUY0WjRWNzVMUGY2SkxNTDlWRXBMNko2eFQxODRZeEJlUGR2SEhIU2F3bk8vWk9ZUXozTy9mZnZqM1kybWZpQWZtdm9IcWlBSWhURU8yNHNCQUtrMGgveGtmZkpkeDU2VWt4RDBJOEcxM0NEWnB3dUVGcExqNnRRPT0iLCJpdlBhcmFtZXRlclNwZWMiOiJTT3pGeTVnRzd1VEZVWVdkIiwibWF0ZXJpYWxTZXRTZXJpYWwiOjF9\u0026v=1"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_codepipeline.default",
+            "aws_iam_role.default",
+            "data.aws_iam_policy_document.assume_role"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::10923413412341:role/flask-sample-private-pipeline-role",
+            "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"codepipeline.amazonaws.com\",\"codebuild.amazonaws.com\"]},\"Action\":\"sts:AssumeRole\"}]}",
+            "create_date": "2022-03-21T04:21:33Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "flask-sample-private-pipeline-role",
+            "max_session_duration": 3600,
+            "name": "flask-sample-private-pipeline-role",
+            "name_prefix": null,
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": {},
+            "unique_id": "AROARTBGVCK5WJ2GRMP7C"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "data.aws_iam_policy_document.assume_role"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "flask-sample-private-pipeline-role:flask-sample-private-pipeline-policy",
+            "name": "flask-sample-private-pipeline-policy",
+            "name_prefix": null,
+            "policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"AllowLogging\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"logs:PutLogEvents\",\n        \"logs:CreateLogStream\",\n        \"logs:CreateLogGroup\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowAccessToArtifactsInS3\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"s3:*\",\n      \"Resource\": [\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci/*\",\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci\"\n      ]\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageResourcesItCreates\",\n      \"Effect\": \"Allow\",\n      \"Action\": \"s3:PutObject\",\n      \"Resource\": [\n        \"arn:aws:s3:::elasticbeanstalk*\",\n        \"arn:aws:s3:::codepipeline*\"\n      ]\n    },\n    {\n      \"Sid\": \"AllowCodePipelinToRunCodeDeploy\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"codedeploy:RegisterApplicationRevision\",\n        \"codedeploy:GetDeploymentConfig\",\n        \"codedeploy:GetDeployment\",\n        \"codedeploy:GetApplicationRevision\",\n        \"codedeploy:CreateDeployment\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToSeeResources\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"sns:ListSubscriptionsByTopic\",\n        \"rds:DescribeOrderableDBInstanceOptions\",\n        \"rds:DescribeDBInstances\",\n        \"elasticloadbalancing:DescribeLoadBalancers\",\n        \"elasticbeanstalk:UpdateEnvironment\",\n        \"elasticbeanstalk:DescribeEvents\",\n        \"elasticbeanstalk:DescribeEnvironments\",\n        \"elasticbeanstalk:DescribeApplicationVersions\",\n        \"elasticbeanstalk:CreateApplicationVersion\",\n        \"ec2:DescribeVpcs\",\n        \"ec2:DescribeSubnets\",\n        \"ec2:DescribeSecurityGroups\",\n        \"ec2:DescribeKeyPairs\",\n        \"ec2:DescribeInstances\",\n        \"ec2:DescribeImages\",\n        \"ec2:DescribeAddresses\",\n        \"cloudformation:UpdateStack\",\n        \"cloudformation:GetTemplate\",\n        \"cloudformation:DescribeStacks\",\n        \"cloudformation:DescribeStackResources\",\n        \"cloudformation:DescribeStackResource\",\n        \"cloudformation:DescribeStackEvents\",\n        \"autoscaling:SuspendProcesses\",\n        \"autoscaling:ResumeProcesses\",\n        \"autoscaling:DescribeScalingActivities\",\n        \"autoscaling:DescribeLaunchConfigurations\",\n        \"autoscaling:DescribeAutoScalingGroups\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToInvokeLambdaFunctions\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"lambda:listfunctions\",\n        \"lambda:invokefunction\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageBeanstalkS3Artifacts\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:PutObjectAcl\",\n        \"s3:ListBucket\",\n        \"s3:GetObjectAcl\",\n        \"s3:GetBucketPolicy\",\n        \"s3:DeleteObject\"\n      ],\n      \"Resource\": \"arn:aws:s3:::elasticbeanstalk*\"\n    },\n    {\n      \"Sid\": \"AllowCodePipelineToManageCodeBuildJobs\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"codebuild:StopBuild\",\n        \"codebuild:StartBuild\",\n        \"codebuild:ListProjects\",\n        \"codebuild:ListBuildsForProject\",\n        \"codebuild:ListBuilds\",\n        \"codebuild:BatchGetProjects\",\n        \"codebuild:BatchGetBuilds\"\n      ],\n      \"Resource\": \"*\"\n    }\n  ]\n}",
+            "role": "flask-sample-private-pipeline-role"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default",
+            "data.aws_iam_policy_document.assume_role",
+            "data.aws_iam_policy_document.default"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "github_repository_webhook",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/github\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "active": true,
+            "configuration": [
+              {
+                "content_type": "form",
+                "insecure_ssl": true,
+                "secret": "var.webhook_secret}",
+                "url": "https://eu-west-1.webhooks.aws/trigger?t=eyJlbmNyeXB0ZWREYXRhIjoiWlphdUZPKzd1VEtIUk90NEEwUXU0WVVzK1lFd3FFM0Ftc1E5ME00MTBlNG5qRUJjVnVMS2p4cUY0WjRWNzVMUGY2SkxNTDlWRXBMNko2eFQxODRZeEJlUGR2SEhIU2F3bk8vWk9ZUXozTy9mZnZqM1kybWZpQWZtdm9IcWlBSWhURU8yNHNCQUtrMGgveGtmZkpkeDU2VWt4RDBJOEcxM0NEWnB3dUVGcExqNnRRPT0iLCJpdlBhcmFtZXRlclNwZWMiOiJTT3pGeTVnRzd1VEZVWVdkIiwibWF0ZXJpYWxTZXRTZXJpYWwiOjF9\u0026v=1"
+              }
+            ],
+            "etag": null,
+            "events": [
+              "push"
+            ],
+            "id": "349106558",
+            "name": null,
+            "repository": "flask_sample-private",
+            "url": "https://api.github.com/repos/git-username/flask_sample-private/hooks/349106558"
+          },
+          "sensitive_attributes": [],
+          "private": "eyJzY2hlbWFfdmVyc2lvbiI6IjEifQ==",
+          "dependencies": [
+            "aws_codepipeline_webhook.default"
+          ]
+        }
+      ]
+    }
+  ]
+}

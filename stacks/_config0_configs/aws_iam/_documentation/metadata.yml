@@ -1,0 +1,13 @@
+desc: The stack creates IAM credentials to be queried and used by other automation.
+release: 0.0.1
+categories: 
+   - aws
+   - authorization
+   - cloud
+   - public_cloud
+tags:
+   - iam
+   - security_group
+   - config0
+   - aws
+   - infrastructure

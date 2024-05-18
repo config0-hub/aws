@@ -1,0 +1,31 @@
+{
+  "version": 4,
+  "terraform_version": "0.14.6",
+  "serial": 1,
+  "lineage": "cd0959d1-b775-f1dc-6070-bc58094d293d",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "aws_key_pair",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "fingerprint": "df:ba:90:95:0e:06:cd:a8:82:72:29:5c:3d:c3:a6:8d",
+            "id": "test",
+            "key_name": "test",
+            "key_name_prefix": null,
+            "key_pair_id": "key-0bd50d74305f24b4a",
+            "public_key": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDAnQonW+is6CcskR+LQyvStujGcjqYQVuTM8OQEGcai0H5GI6ErNB0dNA4HIdytlylekqz9GoM/piO77NyhZ7XyPOx1GTI5YeYB44huTQ2NEBD/e6r0rcFAeyWWxBLzqVPJ6rF8elogRE+T5POx+GTxyr668UEL8OiWAfbIuLZTLJ2MoGXeUgkaIeQSNsIlSYIsGDBijpyaTsfsjeD6u7juPU6RsdWKoQrWkRQS97GKvIUTgWM6GaZYRPjrSwMnonvq0EkiIHSbQnsGmoSsd1QB125TERn484RghO5cHj+tWD5og/nwGHYa7LKdh3XIgDQpLFWJuVsACczXVpkhLcTQdudVwOql7yaqxhW+U9AFsu819OQrxBW8EK3974dUPR6AubO77nWc3IXOJYB0J//0S5bQVTqrlRG6YBy09ObRlfFiByti3cNzRh8qoduYfijNWUnzrn4dM6eGtqIPIsGi8skmknY9zIbpTmijaSid35TF5VQ+z+LLiEC0HlA+TRcodv67dtcUC+P/qsdAM8C6Mk/fsy6TTYbYqxgJrCzk/GQ0LSey2fn3h3kSwx4sqxRDQSHEijb/toVuak4T+yHqlrQApmvtIeaoidIOJVfNufuhV6bg8658lS1jDVQg9nFiXwDVtUJutHMR0QGVoPztFby2fHoOEbdjs1dH7HyQQ== gary.leong@gary-HP-ENVY-Laptop-17-ae1xx",
+            "tags": null
+          },
+          "sensitive_attributes": [],
+          "private": "eyJzY2hlbWFfdmVyc2lvbiI6IjEifQ=="
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+cloud_tags          = {{ cloud_tags }}
+lambda_env_vars     = {{ lambda_env_vars }}
