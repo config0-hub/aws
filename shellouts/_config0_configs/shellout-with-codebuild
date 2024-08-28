@@ -16,17 +16,17 @@ class CodebuildShellout:
         self.logger = Config0Logger(self.classname,
                                     logcategory="cloudprovider")
 
-        if "CONFIG0_BUILDPARMS_HASH" not in os.environ:
-            raise Exception("CONFIG0_BUILDPARMS_HASH needs to be set as an env var")
+        if "CODEBUILD_PARAMS_HASH" not in os.environ:
+            raise Exception("CODEBUILD_PARAMS_HASH needs to be set as an env var")
 
-        config0_buildparams = b64_decode(os.environ["CONFIG0_BUILDPARMS_HASH"])
+        config0_buildparams = b64_decode(os.environ["CODEBUILD_PARAMS_HASH"])
         self.buildparams = config0_buildparams.get("inputargs")
 
         if config0_buildparams.get("env_vars"):
             self.buildparams["build_env_vars"] = config0_buildparams["env_vars"]
 
         if not self.buildparams:
-            raise Exception("buildparams not found in CONFIG0_BUILDPARMS_HASH")
+            raise Exception("buildparams not found in CODEBUILD_PARAMS_HASH")
 
     def run(self):
 

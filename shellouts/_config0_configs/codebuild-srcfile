@@ -21,7 +21,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         ResourceCmdHelper.__init__(
             self,
-            main_env_var_key="CONFIG0_BUILDPARMS_HASH",
+            main_env_var_key="CODEBUILD_PARAMS_HASH",
             app_name=os.environ["APP_NAME"],
             app_dir=os.environ["APP_DIR"],
             set_must_exists=[
