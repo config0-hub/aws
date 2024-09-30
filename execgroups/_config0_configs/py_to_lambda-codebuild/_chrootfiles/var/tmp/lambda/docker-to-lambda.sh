@@ -18,11 +18,18 @@ export DOCKERFILE_LAMBDA=${DOCKERFILE_LAMBDA:=Dockerfile}
 # Main
 ######################################################
 
+# Check if S3_KEY is set
+if [ -z "${S3_KEY}" ]; then
+    # If S3_KEY is not set, assign it the value of LAMBDA_NAME
+    export S3_KEY="${LAMBDA_PKG_NAME}"
+fi
+
 echo "######################################################"
 echo "# Variables"
 echo "######################################################"
 echo "LAMBDA_PKG_NAME => ${LAMBDA_PKG_NAME}"
 echo "S3_BUCKET => ${S3_BUCKET}"
+echo "S3_KEY => ${S3_KEY}"
 echo "DOCKER_TEMP_IMAGE => ${DOCKER_TEMP_IMAGE}"
 echo "######################################################"
 
@@ -38,7 +45,7 @@ docker build --build-arg pkg_name=$LAMBDA_PKG_NAME \
 if [ "$CODEBUILD_ENV" = "true" ]; then
     docker create --name ${DOCKER_TEMP_IMAGE}-run $DOCKER_TEMP_IMAGE || exit 5
     docker cp ${DOCKER_TEMP_IMAGE}-run:${SHARE_DIR}/${LAMBDA_PKG_DIR}/${LAMBDA_PKG_NAME}.zip /tmp/${LAMBDA_PKG_NAME}.zip || exit 6
-    aws s3 cp /tmp/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${LAMBDA_PKG_NAME}.zip || exit 7
+    aws s3 cp /tmp/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${S3_KEY}.zip || exit 7
     docker rm ${DOCKER_TEMP_IMAGE}-run
 else
     echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" > .env
@@ -46,7 +53,8 @@ else
     echo "AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN" >> .env
     echo "LAMBDA_PKG_NAME=${LAMBDA_PKG_NAME}" >> .env
     echo "S3_BUCKET=${S3_BUCKET}" >> .env
+    echo "S3_KEY=${S3_KEY}" >> .env
     echo "DOCKER_TEMP_IMAGE=${DOCKER_TEMP_IMAGE}" >> .env
-    docker run --rm -i --env-file .env $DOCKER_TEMP_IMAGE cp ${SHARE_DIR}/${LAMBDA_PKG_DIR}/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${LAMBDA_PKG_NAME}.zip || exit 6
+    docker run --rm -i --env-file .env $DOCKER_TEMP_IMAGE cp ${SHARE_DIR}/${LAMBDA_PKG_DIR}/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${S3_KEY}.zip || exit 6
     rm -rf .env
 fi
