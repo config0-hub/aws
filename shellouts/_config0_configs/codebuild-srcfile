@@ -187,7 +187,8 @@ class CodebuildSrcFile(ResourceCmdHelper):
         codebuild_helper.run(sparse_env_vars=False)
 
         if codebuild_helper.results.get("status") is False and codebuild_helper.results.get("output"):
-            self.logger.debug(codebuild_helper.results["output"])
+            for line in codebuild_helper.results["output"].split("\n"):
+                print(line)
             self.logger.error("codebuild failed:")
 
         if codebuild_helper.results.get("output"):
