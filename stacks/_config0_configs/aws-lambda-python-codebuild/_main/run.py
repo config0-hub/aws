@@ -195,6 +195,7 @@ def run(stackargs):
                        os.path.join(stack.share_dir,
                                     stack.stateful_id))
 
+    # create lambda zip file
     _env_vars = {
         'DOCKER_TEMP_IMAGE': f'{stack.lambda_name}-temp',
         'LAMBDA_PKG_NAME': stack.lambda_name,
