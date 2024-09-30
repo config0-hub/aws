@@ -183,14 +183,18 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         codebuild_helper = CodebuildResourceHelper(set_env_vars=_set_env_vars,
                                                    **self.buildparams)
+
         codebuild_helper.run(sparse_env_vars=False)
+
+        if codebuild_helper.results.get("status") is False and codebuild_helper.results.get("output"):
+            self.logger.debug(codebuild_helper.results["output"])
+            self.logger.error("codebuild failed:")
 
         if codebuild_helper.results.get("output"):
             self.append_log(codebuild_helper.results["output"])
             del codebuild_helper.results["output"]
 
         if codebuild_helper.results.get("status") is False:
-            self.logger.error("codebuild failed:")
             exit(9)
 
         exit(0)
