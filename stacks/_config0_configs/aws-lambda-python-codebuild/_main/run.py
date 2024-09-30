@@ -57,7 +57,7 @@ phases:
       - cd {run_share_dir}/
       - cd venv/lib/python$PYTHON_VERSION/site-packages/
       - zip -q -r /tmp/{lambda_name}.zip .
-      - aws s3 cp /tmp/{lambda_name}.zip s3://{s3_bucket}/{lambda_name}.zip --quiet
+      - aws s3 cp /tmp/{lambda_name}.zip s3://{tmp_bucket}/{stateful_id}/state/src.{stateful_id}.zip --quiet
 
 '''.format(run_share_dir=stack.run_share_dir,
            s3_bucket=stack.s3_bucket,
@@ -68,6 +68,7 @@ phases:
 
     return stack.b64_encode(contents)
 
+# ref 4353253452354
 def _get_buildspec_hash_v2(stack):
 
     contents_1 = '''version: 0.2
@@ -81,7 +82,7 @@ phases:
   pre_build:
     on-failure: ABORT
     commands:
-      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
+      - aws s3 cp s3://{tmp_bucket}/{stateful_id}/state/src.{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
       - mkdir -p {share_dir}
       - mkdir -p {run_share_dir}
       - unzip -o {tmpdir}/{stateful_id}.zip -d {run_share_dir}/
