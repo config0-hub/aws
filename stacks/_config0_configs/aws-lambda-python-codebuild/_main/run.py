@@ -82,7 +82,7 @@ phases:
   pre_build:
     on-failure: ABORT
     commands:
-      - aws s3 cp s3://{tmp_bucket}/{stateful_id}/state/src.{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
+      - aws s3 cp s3://{tmp_bucket}/{stateful_id}/state/src.{stateful_id}.zip {tmpdir}/{stateful_id}.zip --quiet
       - mkdir -p {share_dir}
       - mkdir -p {run_share_dir}
       - unzip -o {tmpdir}/{stateful_id}.zip -d {run_share_dir}/
