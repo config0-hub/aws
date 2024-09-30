@@ -7,7 +7,7 @@ from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
 from config0_publisher.fileutils import zipcli
-from jiffycommon.utilities import id_generator2
+from config0_publisher.utilities import id_generator2
 
 class CodebuildSrcFile(ResourceCmdHelper):
 
@@ -187,8 +187,11 @@ class CodebuildSrcFile(ResourceCmdHelper):
         codebuild_helper.run(sparse_env_vars=False)
 
         if codebuild_helper.results.get("status") is False and codebuild_helper.results.get("output"):
-            for line in codebuild_helper.results["output"].split("\n"):
-                print(line)
+            try:
+                for line in codebuild_helper.results["output"].split("\n"):
+                    print(line)
+            except:
+                print(codebuild_helper.results["output"])
             self.logger.error("codebuild failed:")
 
         if codebuild_helper.results.get("output"):
