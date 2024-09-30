@@ -13,6 +13,8 @@ def _set_codebuild_image(stack):
         stack.set_variable("build_image",
                            'aws/codebuild/standard:7.0')
 
+
+# ref 4353253452354
 def _get_buildspec_hash_v1(stack):
 
     contents_1 = '''version: 0.2
@@ -26,7 +28,7 @@ phases:
   pre_build:
     on-failure: ABORT
     commands:
-      - aws s3 cp s3://{tmp_bucket}/{stateful_id} {tmpdir}/{stateful_id}.zip --quiet
+      - aws s3 cp s3://{tmp_bucket}/{stateful_id}/state/src.{stateful_id}.zip {tmpdir}/{stateful_id}.zip --quiet
       - mkdir -p {run_share_dir}
       - unzip -o {tmpdir}/{stateful_id}.zip -d {run_share_dir}/
       - rm -rf {tmpdir}/{stateful_id}.zip 

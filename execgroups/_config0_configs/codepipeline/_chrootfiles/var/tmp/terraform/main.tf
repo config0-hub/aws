@@ -227,17 +227,16 @@ resource "aws_codepipeline" "default" {
     name = "Source"
 
     action {
-      name             = "Source"
-      category         = "Source"
-      owner            = "ThirdParty"
-      provider         = var.code_provider
-      version          = "1"
+      name            = "S3Source"
+      category        = "Source"
+      owner           = "AWS"
+      provider        = "S3"
+      version         = "2"
       output_artifacts = ["source_output"]
 
       configuration = {
-        Owner  = var.git_owner
-        Repo   = var.git_repo
-        Branch = var.git_branch
+        S3Bucket    = var.s3_src_bucket
+        S3ObjectKey = "ci/build/build.zip"  # Change to your source object key
       }
     }
   }
@@ -251,7 +250,7 @@ resource "aws_codepipeline" "default" {
       owner           = "AWS"
       provider        = "CodeBuild"
       input_artifacts = ["source_output"]
-      version         = "1"
+      version         = "2"
 
       configuration = {
         ProjectName = var.codebuild_name
@@ -260,37 +259,3 @@ resource "aws_codepipeline" "default" {
   }
 
 }
-
-#############################################################################
-# Replace bottom with stack
-#############################################################################
-
-resource "aws_codepipeline_webhook" "default" {
-  name            = "${var.codepipeline_name}-${var.code_provider}-webhook" 
-  authentication  = "GITHUB_HMAC" 
-  target_action   = "Source"
-  target_pipeline = "${aws_codepipeline.default.name}"
-
-  authentication_configuration {
-    secret_token = var.webhook_secret
-  }
-
-  filter {
-    json_path    = "$.ref"
-    match_equals = "refs/heads/{Branch}"
-  }
-}
-
-resource "github_repository_webhook" "default" {
-  repository     = var.git_repo
-
-  configuration {
-    url          = "${aws_codepipeline_webhook.default.url}"
-    content_type = "form"
-    insecure_ssl = true
-    secret       = "var.webhook_secret}"
-  }
-
-  events = ["push"]
-}
-

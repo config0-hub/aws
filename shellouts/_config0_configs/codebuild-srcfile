@@ -7,6 +7,7 @@ from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
 from config0_publisher.fileutils import zipcli
+from jiffycommon.utilities import id_generator2
 
 class CodebuildSrcFile(ResourceCmdHelper):
 
@@ -129,13 +130,16 @@ class CodebuildSrcFile(ResourceCmdHelper):
     def _tar_upload_s3(self):
 
         abs_app_dir = self._get_fqn_app_dir_path()
+        temp_filename = f'{id_generator2()}.zip'
 
+        # ref 4353253452354
         srcfile = zipcli(abs_app_dir,
                          self.tmpdir,
-                         self.stateful_id,
+                         temp_filename,
                          exit_error=True)
 
-        cmd = f'aws s3 cp {srcfile} s3://{self.buildparams["build_env_vars"]["UPLOAD_BUCKET"]}/{self.stateful_id}'
+        # ref 4353253452354
+        cmd = f'aws s3 cp {srcfile} s3://{self.buildparams["build_env_vars"]["UPLOAD_BUCKET"]}/{self.stateful_id}/state/src.{self.stateful_id}.zip'
 
         return self.execute(cmd)
 

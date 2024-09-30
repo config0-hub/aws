@@ -106,10 +106,12 @@ def run(stackargs):
 
     tf.include(values={"cred_type":"aws"})
 
-    tf.include(maps={"values": {"AWS_ACCESS_KEY_ID": "id",
-                                "AWS_SECRET_ACCESS_KEY": "secret"}
-                     }
-               )
+    tf.include(maps={
+        "values": {
+            "AWS_ACCESS_KEY_ID": "id",
+            "AWS_SECRET_ACCESS_KEY": "secret"
+        }
+    })
 
     tf.exclude(keys=["ses_smtp_password_v4"])
 
