@@ -120,7 +120,6 @@ def run(stackargs):
     stack.parse.add_required(key="config0_lambda_execgroup_name")
     stack.parse.add_required(key="lambda_name")
     stack.parse.add_required(key="s3_bucket")
-    stack.parse.add_optional(key="s3_key")
 
     stack.parse.add_optional(key="handler",
                              default="app.handler")
@@ -182,8 +181,7 @@ def run(stackargs):
     stack.init_substacks()
 
     # ref 5490734650346
-    stack.add_execgroup("{} {}".format(stack.config0_lambda_execgroup_name,
-                                       stack.py_to_lambda.name),
+    stack.add_execgroup(f"{stack.config0_lambda_execgroup_name} {stack.py_to_lambda.name}",
                         "buildgroups",
                         overide=True)
 
@@ -214,7 +212,8 @@ def run(stackargs):
         'COMPUTE_TYPE': stack.compute_type,
         'IMAGE_TYPE': stack.image_type,
         'BUILDSPEC_HASH': _get_buildspec_hash_v2(stack),
-        'BUILD_TIMEOUT': stack.build_timeout
+        'BUILD_TIMEOUT': stack.build_timeout,
+        "AWS_DEFAULT_REGION": stack.aws_default_region
     }
 
     # we need to declare app initially - lambda app
@@ -224,6 +223,7 @@ def run(stackargs):
             "build_env_vars":_env_vars}
         ),
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
+        "AWS_DEFAULT_REGION": stack.aws_default_region,
         'WORKING_DIR': stack.run_share_dir,
         'APP_NAME':"lambda",
         'APP_DIR':"var/tmp/lambda"
@@ -240,13 +240,8 @@ def run(stackargs):
     stack.buildgroups.insert(**inputargs)
 
     # create lambda function
-    if not stack.get_attr("s3_key"):
-        s3_key = "{}.zip".format(stack.lambda_name)
-    else:
-        s3_key = stack.s3_key
-
     arguments = {
-        "s3_key": s3_key,
+        "s3_key": f"{stack.lambda_name}.zip",
         "lambda_name": stack.lambda_name,
         "s3_bucket": stack.s3_bucket,
         "handler": stack.handler,
@@ -271,9 +266,11 @@ def run(stackargs):
     if stack.get_attr("stateful_id"):
         arguments["stateful_id"] = stack.stateful_id
 
-    inputargs = {"arguments": arguments,
-                 "automation_phase": "infrastructure",
-                 "human_description": 'Create lambda function for {}'.format(stack.lambda_name)}
+    inputargs = {
+        "arguments": arguments,
+        "automation_phase": "infrastructure",
+        "human_description": f'Create lambda function for {stack.lambda_name}'
+    }
 
     stack.aws_lambda.insert(display=True,
                             **inputargs)
