@@ -104,7 +104,7 @@ def run(stackargs):
     else:
         lambda_env_vars = {}
 
-    stack.set_variable("timeout",900)
+    stack.set_variable("timeout",600)  # it should not take longer than 10 minutes to establish the lambda function
 
     stack.set_variable("lambda_env_vars",
                        lambda_env_vars,
