@@ -77,21 +77,3 @@ EOF
 variable "policy_template_hash" {
   default     = "ewogIlZlcnNpb24iOiAiMjAxMi0xMC0xNyIsCiAiU3RhdGVtZW50IjogWwogICB7CiAgICAgIkFjdGlvbiI6IFsKICAgICAgICJsb2dzOkNyZWF0ZUxvZ0dyb3VwIiwKICAgICAgICJsb2dzOkNyZWF0ZUxvZ1N0cmVhbSIsCiAgICAgICAibG9nczpQdXRMb2dFdmVudHMiCiAgICAgXSwKICAgICAiUmVzb3VyY2UiOiAiYXJuOmF3czpsb2dzOio6KjoqIiwKICAgICAiRWZmZWN0IjogIkFsbG93IgogICB9CiBdCn0K"
 }
-
-#####################################
-# Default policy template hash below
-#####################################
-#{
-# "Version": "2012-10-17",
-# "Statement": [
-#   {
-#     "Action": [
-#       "logs:CreateLogGroup",
-#       "logs:CreateLogStream",
-#       "logs:PutLogEvents"
-#     ],
-#     "Resource": "arn:aws:logs:*:*:*",
-#     "Effect": "Allow"
-#   }
-# ]
-#}

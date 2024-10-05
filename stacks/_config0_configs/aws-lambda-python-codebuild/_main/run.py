@@ -193,7 +193,7 @@ def run(stackargs):
     # set more stack vars
     stack.set_variable("run_share_dir",
                        os.path.join(stack.share_dir,
-                                    stack.stateful_id))
+                       stack.stateful_id))
 
     # create lambda zip file
     _env_vars = {

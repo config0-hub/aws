@@ -95,7 +95,7 @@ def run(stackargs):
 
     if not stack.get_attr("s3_key"):
         stack.set_variable("s3_key",
-                           "{}.zip".format(stack.lambda_name),
+                           f"{stack.lambda_name}.zip",
                            tags="tfvar",
                            types="str")
 

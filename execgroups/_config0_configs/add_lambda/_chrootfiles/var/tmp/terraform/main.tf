@@ -28,8 +28,8 @@ resource "aws_iam_role_policy_attachment" "default" {
 resource "aws_lambda_function" "default" {
   function_name                  = var.lambda_name
   layers                         = var.lambda_layers != null ? split(",",var.lambda_layers) : []
-  memory_size                    = var.memory_size
   timeout                        = var.lambda_timeout
+  memory_size                    = var.memory_size
   s3_bucket                      = var.s3_bucket
   s3_key                         = var.s3_key
   role                           = aws_iam_role.lambda.arn
