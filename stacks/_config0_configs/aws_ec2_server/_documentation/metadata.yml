@@ -1,0 +1,13 @@
+desc: The stack that creates a ec2 server on aws.
+release: 0.0.1
+categories: 
+   - aws
+   - ec2
+   - cloud
+   - public_cloud
+tags:
+   - ec2
+   - server
+   - host
+   - aws
+   - infrastructure

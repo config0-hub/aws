@@ -1,0 +1,10 @@
+desc: The stack is essentially stops an ec2 server.
+release: 0.0.1
+categories: 
+   - ec2
+   - aws
+tags:
+   - config0
+   - helper
+   - ec2
+   - aws

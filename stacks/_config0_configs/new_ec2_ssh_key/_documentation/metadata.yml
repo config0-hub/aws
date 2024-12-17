@@ -1,0 +1,14 @@
+desc: The stack generates ssh_key and uploads it to ec2/aws.
+release: 0.0.1
+categories: 
+   - ssh_key
+   - cloud
+   - public_cloud
+tags:
+   - aws
+   - ssh_key
+   - host
+   - ec2
+   - infrastructure
+   - featured
+   - featured_infrastructure

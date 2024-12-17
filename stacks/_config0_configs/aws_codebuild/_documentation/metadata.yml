@@ -1,0 +1,14 @@
+desc: The stack setups up codebuild.
+release: 0.0.1
+categories: 
+   - aws
+   - codebuild
+   - cloud
+   - public_cloud
+tags:
+   - codebuild
+   - host
+   - aws
+   - infrastructure
+   - featured
+   - ci
