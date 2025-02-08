@@ -1,0 +1,64 @@
+############################################################
+# build code
+############################################################
+
+ARG lang_version=3.9
+FROM public.ecr.aws/docker/library/python:${lang_version} as build
+
+ARG lang_version=3.9
+ENV LANG_VERSION=$lang_version
+
+RUN mkdir -p /var/tmp/package/lambda
+
+RUN /bin/bash -c "cd /var/tmp && \
+    python3 -m venv /var/tmp/venv 
+
+COPY requirements.txt /tmp/requirements.txt
+COPY src.tar.gz /var/tmp/venv/lib/python${LANG_VERSION}/site-packages/
+
+WORKDIR /var/tmp/venv/lib/python${LANG_VERSION}/site-packages
+
+RUN /bin/bash -c "source /var/tmp/venv/bin/activate && \
+    pip3 install setuptools_rust && \
+    pip3 install -r /tmp/requirements.txt && \
+    rm -rf /tmp/requirements.txt"
+
+RUN mv /var/tmp/venv/lib/python${LANG_VERSION}/site-packages /var/tmp/app
+
+
+############################################################
+# create the upload container
+############################################################
+
+FROM public.ecr.aws/docker/library/alpine:3.18.4
+
+RUN apk add --no-cache python3 py3-pip && \
+    rm -rf /var/cache/apk/*
+
+RUN pip3 install --no-cache-dir awscli 
+
+RUN apk add --no-cache zip tar gzip && \
+    rm -rf /var/cache/apk/*
+
+# set these arguments through
+# docker build arguments
+
+ARG pkg_name=PleaseSetPkgName
+ENV LAMBDA_PKG_NAME=$pkg_name
+
+ARG s3_bucket=PleaseSetS3Bucket
+ENV S3_BUCKET=$s3_bucket
+
+COPY --from=build /var/tmp/app /var/tmp/app
+
+RUN cd /var/tmp/app && \
+    tar xvfz src.tar.gz . && \
+    rm -rf src.tar.gz 
+
+RUN chmod 755 -R /var/tmp/app/config0_common
+
+RUN mkdir -p /var/tmp/package/lambda && \
+    cd /var/tmp/app && \
+    zip -r9 /var/tmp/package/lambda/$LAMBDA_PKG_NAME . 
+
+ENTRYPOINT ["aws", "s3" ]

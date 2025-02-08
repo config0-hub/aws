@@ -1,0 +1,16 @@
+desc: The stack uploads ssh public key to ec2.
+release: 0.0.1
+categories: 
+   - aws
+   - ec2
+   - ssh_key
+   - cloud
+   - public_cloud
+tags:
+   - ec2
+   - ssh_key
+   - ssh_public_key
+   - public_key
+   - host
+   - aws
+   - infrastructure

@@ -1,0 +1,14 @@
+desc: The stack creates IAM instance role to be associated to an ec2 instance
+release: 0.0.1
+categories: 
+   - aws
+   - authorization
+   - cloud
+   - public_cloud
+tags:
+   - iam
+   - instance
+   - security_group
+   - config0
+   - aws
+   - infrastructure

@@ -1,0 +1,215 @@
+{
+  "version": 4,
+  "terraform_version": "0.14.10",
+  "serial": 292,
+  "lineage": "5fe34e29-1845-48ec-7c21-21b30ad28dad",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "data",
+      "type": "aws_caller_identity",
+      "name": "current",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "account_id": "1096027334562346",
+            "arn": "arn:aws:iam::1096027334562346:user/system/eval-config0-iam",
+            "id": "2022-03-21 04:20:08.402243656 +0000 UTC",
+            "user_id": "AIDARTBGVCK5WGBXCVHLG"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "data",
+      "type": "template_file",
+      "name": "buildspec",
+      "provider": "provider[\"registry.terraform.io/hashicorp/template\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "filename": null,
+            "id": "9c1651accde82b1fe3d887f4657accfb21cf97a8c2618f8e8ae708761870fa50",
+            "rendered": "version: 0.2\n\nenv:\n  variables:\n    code_dir: /tmp/code/src\n    AWS_DEFAULT_REGION: eu-west-1\n    AWS_ACCOUNT_ID: 1096027334562346\n    GIT_URL: \"git@github.com:github-user/flask_sample-private.git\"\n    S3_BUCKET: flask-sample-private-codebuild-ci\n  parameter-store:\n    ssh_key: /codebuild/flask-sample-private/sshkeys/private\nphases:\n  pre_build:\n    on-failure: ABORT\n    commands:   \n      - export COMMIT_HASH=${COMMIT_HASH:=$CODEBUILD_RESOLVED_SOURCE_VERSION}\n      - mkdir -p ~/.ssh\n      - echo $ssh_key | base64 -d \u003e ~/.ssh/id_rsa   \n      - chmod 600 ~/.ssh/id_rsa\n      - eval \"$(ssh-agent -s)\"\n      - mkdir -p $code_dir\n      - cd $code_dir\n      - git init\n      - git remote add origin \"$GIT_URL\"\n      - git fetch --quiet origin \n      - git checkout --quiet -f $COMMIT_HASH\n      - rm -rf .git\n      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com\n\n  build:\n    on-failure: ABORT\n    commands:   \n      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH . -f Dockerfile\n      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest\n\n  post_build:\n    commands:\n      - echo \"export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN\" \u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID\" \u003e\u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER\" \u003e\u003e /tmp/codebuild.env\n      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME --all-tags\n      - echo \"\" ; cat /tmp/codebuild.env ; echo \"\"\n\n",
+            "template": "version: 0.2\n\nenv:\n  variables:\n    code_dir: /tmp/code/src\n    AWS_DEFAULT_REGION: ${aws_default_region}\n    AWS_ACCOUNT_ID: ${aws_account_id}\n    GIT_URL: \"${git_url}\"\n    S3_BUCKET: ${s3_bucket}\n  parameter-store:\n    ssh_key: ${ssm_ssh_key}\nphases:\n  pre_build:\n    on-failure: ABORT\n    commands:   \n      - export COMMIT_HASH=$${COMMIT_HASH:=$CODEBUILD_RESOLVED_SOURCE_VERSION}\n      - mkdir -p ~/.ssh\n      - echo $ssh_key | base64 -d \u003e ~/.ssh/id_rsa   \n      - chmod 600 ~/.ssh/id_rsa\n      - eval \"$(ssh-agent -s)\"\n      - mkdir -p $code_dir\n      - cd $code_dir\n      - git init\n      - git remote add origin \"$GIT_URL\"\n      - git fetch --quiet origin \n      - git checkout --quiet -f $COMMIT_HASH\n      - rm -rf .git\n      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com\n\n  build:\n    on-failure: ABORT\n    commands:   \n      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH . -f Dockerfile\n      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest\n\n  post_build:\n    commands:\n      - echo \"export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN\" \u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID\" \u003e\u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER\" \u003e\u003e /tmp/codebuild.env\n      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME --all-tags\n      - echo \"\" ; cat /tmp/codebuild.env ; echo \"\"\n\n",
+            "vars": {
+              "aws_account_id": "1096027334562346",
+              "aws_default_region": "eu-west-1",
+              "git_url": "git@github.com:github-user/flask_sample-private.git",
+              "s3_bucket": "flask-sample-private-codebuild-ci",
+              "ssm_ssh_key": "/codebuild/flask-sample-private/sshkeys/private"
+            }
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_codebuild_project",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:codebuild:eu-west-1:1096027334562346:project/flask-sample-private",
+            "artifacts": [
+              {
+                "artifact_identifier": "",
+                "encryption_disabled": false,
+                "location": "",
+                "name": "",
+                "namespace_type": "",
+                "override_artifact_name": false,
+                "packaging": "",
+                "path": "",
+                "type": "NO_ARTIFACTS"
+              }
+            ],
+            "badge_enabled": false,
+            "badge_url": "",
+            "build_timeout": 5,
+            "cache": [
+              {
+                "location": "flask-sample-private-codebuild-cache",
+                "modes": null,
+                "type": "S3"
+              }
+            ],
+            "description": "Codebuild src code to s3",
+            "encryption_key": "arn:aws:kms:eu-west-1:1096027334562346:alias/aws/s3",
+            "environment": [
+              {
+                "certificate": "",
+                "compute_type": "BUILD_GENERAL1_SMALL",
+                "environment_variable": [
+                  {
+                    "name": "GIT_URL",
+                    "type": "PLAINTEXT",
+                    "value": "git@github.com:github-user/flask_sample-private.git"
+                  },
+                  {
+                    "name": "IMAGE_REPO_NAME",
+                    "type": "PLAINTEXT",
+                    "value": "flask_sample"
+                  }
+                ],
+                "image": "aws/codebuild/standard:5.0",
+                "image_pull_credentials_type": "CODEBUILD",
+                "privileged_mode": true,
+                "registry_credential": [],
+                "type": "LINUX_CONTAINER"
+              }
+            ],
+            "id": "arn:aws:codebuild:eu-west-1:1096027334562346:project/flask-sample-private",
+            "logs_config": [
+              {
+                "cloudwatch_logs": [
+                  {
+                    "group_name": "log-group",
+                    "status": "ENABLED",
+                    "stream_name": "log-stream"
+                  }
+                ],
+                "s3_logs": [
+                  {
+                    "encryption_disabled": false,
+                    "location": "flask-sample-private-codebuild-ci/codebuild/logs",
+                    "status": "ENABLED"
+                  }
+                ]
+              }
+            ],
+            "name": "flask-sample-private",
+            "queued_timeout": 480,
+            "secondary_artifacts": [],
+            "secondary_sources": [],
+            "service_role": "arn:aws:iam::1096027334562346:role/flask-sample-private-codebuild-role",
+            "source": [
+              {
+                "auth": [],
+                "buildspec": "version: 0.2\n\nenv:\n  variables:\n    code_dir: /tmp/code/src\n    AWS_DEFAULT_REGION: eu-west-1\n    AWS_ACCOUNT_ID: 1096027334562346\n    GIT_URL: \"git@github.com:github-user/flask_sample-private.git\"\n    S3_BUCKET: flask-sample-private-codebuild-ci\n  parameter-store:\n    ssh_key: /codebuild/flask-sample-private/sshkeys/private\nphases:\n  pre_build:\n    on-failure: ABORT\n    commands:   \n      - export COMMIT_HASH=${COMMIT_HASH:=$CODEBUILD_RESOLVED_SOURCE_VERSION}\n      - mkdir -p ~/.ssh\n      - echo $ssh_key | base64 -d \u003e ~/.ssh/id_rsa   \n      - chmod 600 ~/.ssh/id_rsa\n      - eval \"$(ssh-agent -s)\"\n      - mkdir -p $code_dir\n      - cd $code_dir\n      - git init\n      - git remote add origin \"$GIT_URL\"\n      - git fetch --quiet origin \n      - git checkout --quiet -f $COMMIT_HASH\n      - rm -rf .git\n      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com\n\n  build:\n    on-failure: ABORT\n    commands:   \n      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH . -f Dockerfile\n      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$COMMIT_HASH $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:latest\n\n  post_build:\n    commands:\n      - echo \"export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN\" \u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID\" \u003e\u003e /tmp/codebuild.env ; echo \"export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER\" \u003e\u003e /tmp/codebuild.env\n      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME --all-tags\n      - echo \"\" ; cat /tmp/codebuild.env ; echo \"\"\n\n",
+                "git_clone_depth": null,
+                "git_submodules_config": [],
+                "insecure_ssl": null,
+                "location": "",
+                "report_build_status": null,
+                "type": "NO_SOURCE"
+              }
+            ],
+            "source_version": "",
+            "tags": {
+              "ADD_tag-name": "jim",
+              "ADD_tag-surname": "lee",
+              "Product": "codebuild"
+            },
+            "vpc_config": []
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default",
+            "data.template_file.buildspec"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "arn": "arn:aws:iam::1096027334562346:role/flask-sample-private-codebuild-role",
+            "assume_role_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"codebuild.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}",
+            "create_date": "2022-03-21T04:20:15Z",
+            "description": "",
+            "force_detach_policies": false,
+            "id": "flask-sample-private-codebuild-role",
+            "max_session_duration": 3600,
+            "name": "flask-sample-private-codebuild-role",
+            "name_prefix": null,
+            "path": "/",
+            "permissions_boundary": null,
+            "tags": null,
+            "unique_id": "AROARTBGVCK5ZJLSVJ5PP"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "create_before_destroy": true
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "aws_iam_role_policy",
+      "name": "default",
+      "provider": "provider[\"registry.terraform.io/hashicorp/aws\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "flask-sample-private-codebuild-role:terraform-20220321042017166700000001",
+            "name": "terraform-20220321042017166700000001",
+            "name_prefix": null,
+            "policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Resource\": [\n        \"*\"\n      ],\n      \"Action\": [\n        \"logs:CreateLogGroup\",\n        \"logs:CreateLogStream\",\n        \"logs:PutLogEvents\"\n      ]\n    },\n    {\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"ec2:*\",\n        \"ecr:*\",\n        \"sns:*\",\n        \"ssm:*\"\n      ],\n      \"Resource\": \"*\"\n    },\n    {\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"s3:*\"\n      ],\n      \"Resource\": [\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci\",\n        \"arn:aws:s3:::flask-sample-private-codebuild-cache\",\n        \"arn:aws:s3:::flask-sample-private-codebuild-ci/*\",\n        \"arn:aws:s3:::flask-sample-private-codebuild-cache/*\"\n      ]\n    }\n  ]\n}\n",
+            "role": "flask-sample-private-codebuild-role"
+          },
+          "sensitive_attributes": [],
+          "private": "bnVsbA==",
+          "dependencies": [
+            "aws_iam_role.default"
+          ]
+        }
+      ]
+    }
+  ]
+}
