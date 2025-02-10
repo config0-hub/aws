@@ -210,8 +210,7 @@ def run(stackargs):
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
         'WORKING_DIR': stack.run_share_dir,
         'BUILD_IMAGE': stack.build_image,
-        'COMPUTE_TYPE': stack.compute_type,
-        'IMAGE_TYPE': stack.image_type,
+        'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
         'BUILDSPEC_HASH': _get_buildspec_hash_v2(stack),
         'BUILD_TIMEOUT': stack.build_timeout,
         "AWS_DEFAULT_REGION": stack.aws_default_region
