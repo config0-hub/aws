@@ -13,12 +13,12 @@ class _BuildSpecs(object):
 
         try:
             self.ssm_params = self.stack.b64_decode(self.stack.ssm_params_hash)
-        except:
+        except Exception:
             self.ssm_params = {}
 
         try:
             self.prebuild = self.stack.b64_decode(self.stack.prebuild_hash)
-        except:
+        except Exception:
             self.prebuild = self._default_prebuild()
 
         if self.stack.get_attr("build_hash"):
@@ -30,7 +30,7 @@ class _BuildSpecs(object):
 
         try:
             self.postbuild = self.stack.b64_decode(self.stack.postbuild_hash)
-        except:
+        except Exception:
             self.postbuild = self._default_postbuild()
 
     def _add_build_lines(self, lines):
@@ -62,7 +62,8 @@ env:
 
         self.contents = self.contents + 'phases:'
 
-    def _default_prebuild_headers(self):
+    @staticmethod
+    def _default_prebuild_headers():
 
         contents = '''
   pre_build:
@@ -98,7 +99,8 @@ env:
 
         return lines
 
-    def _default_build_headers(self):
+    @staticmethod
+    def _default_build_headers():
 
         contents = '''
   build:
@@ -107,30 +109,27 @@ env:
 '''
         return contents
 
-    def _default_dockerhub(self):
+    @staticmethod
+    def _default_dockerhub():
 
-        lines = []
-        lines.append(
-            'docker build -t docker.io/$DOCKER_USERNAME/$DOCKER_REPO_NAME:$COMMIT_HASH . -f Dockerfile')
-        lines.append(
-            'docker tag docker.io/$DOCKER_USER/$DOCKER_REPO_NAME:$COMMIT_HASH docker.io/$DOCKER_USER/$DOCKER_REPO_NAME:latest')
-        lines.append(
-            'docker push docker.io/$DOCKER_USER/$DOCKER_REPO_NAME --all-tags')
+        lines = ['docker build -t docker.io/$DOCKER_USERNAME/$DOCKER_REPO_NAME:$COMMIT_HASH . -f Dockerfile',
+                 'docker tag docker.io/$DOCKER_USER/$DOCKER_REPO_NAME:$COMMIT_HASH docker.io/$DOCKER_USER/$DOCKER_REPO_NAME:latest',
+                 'docker push docker.io/$DOCKER_USER/$DOCKER_REPO_NAME --all-tags']
 
         return lines
 
-    def _default_docker_ecr(self):
+    @staticmethod
+    def _default_docker_ecr():
 
-        lines = []
-        lines.append(
-            'docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:$COMMIT_HASH . -f Dockerfile')
-        lines.append('docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:$COMMIT_HASH $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:latest')
-        lines.append(
-            'docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME --all-tags')
+        lines = [
+            'docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:$COMMIT_HASH . -f Dockerfile',
+            'docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:$COMMIT_HASH $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME:latest',
+            'docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$DOCKER_REPO_NAME --all-tags']
 
         return lines
 
-    def _default_postbuild_headers(self):
+    @staticmethod
+    def _default_postbuild_headers():
 
         contents = '''
   post_build:
@@ -138,11 +137,12 @@ env:
 '''
         return contents
 
-    def _default_postbuild(self):
+    @staticmethod
+    def _default_postbuild():
 
-        lines = []
-        lines.append('echo "export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN" > /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID" >> /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER" >> /tmp/codebuild.env')
-        lines.append('echo "" ; cat /tmp/codebuild.env ; echo ""')
+        lines = [
+            'echo "export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN" > /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID" >> /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER" >> /tmp/codebuild.env',
+            'echo "" ; cat /tmp/codebuild.env ; echo ""']
 
         return lines
 
@@ -320,18 +320,14 @@ def run(stackargs):
                        resource_name=stack.codebuild_name,
                        resource_type="aws_codebuild")
 
-    tf.include(maps={"codebuild_project_name": "name"})
+    tf.include(values={
+        "aws_default_region":stack.aws_default_region,
+        "name":stack.codebuild_name,
+        "codebuild_project_name":stack.codebuild_name
+    })
 
-    tf.include(keys=["name",
-                     "service_role",
-                     "environment",
-                     "id",
-                     "arn"])
-
-    tf.output(keys=["name",
-                    "service_role",
+    tf.output(keys=["service_role",
                     "environment",
-                    "id",
                     "arn"])
 
     # finalize the tf_executor

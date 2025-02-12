@@ -100,3 +100,11 @@ output "cloudwatch_arn" {
 output "sns_topic_subscription" {
   value = "${aws_sns_topic_subscription.sns.topic_arn} -> ${aws_sns_topic_subscription.sns.endpoint}"
 }
+
+output "id" {
+  value = aws_sns_topic_subscription.sns.id
+}
+
+output "endpoint" {
+  value = aws_sns_topic_subscription.sns.endpoint
+}

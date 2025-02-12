@@ -147,3 +147,15 @@ resource "aws_codebuild_project" "default" {
   )
 
 }
+
+output "service_role" {
+  value = aws_codebuild_project.default.service_role
+}
+
+output "environment" {
+  value = aws_codebuild_project.default.environment
+}
+
+output "arn" {
+  value = aws_codebuild_project.default.arn
+}
