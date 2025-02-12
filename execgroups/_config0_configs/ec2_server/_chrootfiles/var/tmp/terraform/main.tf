@@ -43,3 +43,31 @@ resource "aws_instance" "default" {
 output "instance_id" {
   value = aws_instance.default.id
 }
+
+output "ami" {
+  value = aws_instance.default.ami
+}
+
+output "arn" {
+  value = aws_instance.default.arn
+}
+
+output "availability_zone" {
+  value = aws_instance.default.availability_zone
+}
+
+output "private_dns" {
+  value = aws_instance.default.private_dns
+}
+
+output "private_ip" {
+  value = aws_instance.default.private_ip
+}
+
+output "public_dns" {
+  value = aws_instance.default.public_dns
+}
+
+output "public_ip" {
+  value = aws_instance.default.public_ip
+}

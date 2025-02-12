@@ -115,36 +115,22 @@ def run(stackargs):
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.lambda_name,
-                       resource_type="aws_lambda",
-                       terraform_type="aws_lambda_function")
+                       resource_type="aws_lambda")
 
-    tf.include(maps={"id": "arn",
-                     "name": "function_name"})
+    tf.include(values={
+        "aws_default_region":stack.aws_default_region,
+        "function_name": stack.lambda_name
+    })
 
-    tf.include(keys=["function_name",
-                     "handler",
-                     "invoke_arn",
-                     "arn",
-                     "layers",
-                     "memory_size",
-                     "role",
-                     "runtime",
-                     "s3_bucket",
-                     "s3_key",
-                     "timeout"])
+    tf.include(maps={"id": "arn"})
 
     tf.output(keys=["s3_key",
                     "s3_bucket",
                     "memory_size",
-                    "role",
                     "runtime",
                     "handler",
-                    "invoke_arn",
-                    "function_name",
                     "layers",
-                    "timeout",
-                    "arn",
-                    "resource_type"])
+                    "arn"])
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,

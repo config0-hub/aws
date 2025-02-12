@@ -55,3 +55,46 @@ resource "aws_lambda_function" "default" {
 
 }
 
+output "s3_key" {
+  value = aws_lambda_function.default.s3_key
+}
+
+output "s3_bucket" {
+  value = aws_lambda_function.default.s3_bucket
+}
+
+output "memory_size" {
+  value = aws_lambda_function.default.memory_size
+}
+
+output "role" {
+  value = aws_lambda_function.default.role
+}
+
+output "runtime" {
+  value = aws_lambda_function.default.runtime
+}
+
+output "handler" {
+  value = aws_lambda_function.default.handler
+}
+
+output "invoke_arn" {
+  value = aws_lambda_function.default.invoke_arn
+}
+
+output "function_name" {
+  value = aws_lambda_function.default.function_name
+}
+
+output "layers" {
+  value = aws_lambda_function.default.layers
+}
+
+output "timeout" {
+  value = aws_lambda_function.default.timeout
+}
+
+output "arn" {
+  value = aws_lambda_function.default.arn
+}

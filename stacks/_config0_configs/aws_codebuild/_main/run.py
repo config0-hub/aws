@@ -318,8 +318,7 @@ def run(stackargs):
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.codebuild_name,
-                       resource_type="aws_codebuild",
-                       terraform_type="aws_codebuild_project")
+                       resource_type="aws_codebuild")
 
     tf.include(maps={"codebuild_project_name": "name"})
 

@@ -101,8 +101,7 @@ def run(stackargs):
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.policy_name,
-                       resource_type="credentials",
-                       terraform_type="aws_iam_access_key")
+                       resource_type="credentials")
 
     tf.include(values={"cred_type":"aws"})
 

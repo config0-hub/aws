@@ -81,8 +81,7 @@ def run(stackargs):
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.role_name,
-                       resource_type="iam_instance_profile",
-                       terraform_type="aws_iam_instance_profile")
+                       resource_type="iam_instance_profile")
 
     tf.include(maps={"id": "unique_id"})
 

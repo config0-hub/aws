@@ -138,8 +138,7 @@ def run(stackargs):
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.key_name,
-                       resource_type="ssh_public_key",
-                       terraform_type="aws_key_pair")
+                       resource_type="ssh_public_key")
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,

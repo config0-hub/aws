@@ -105,8 +105,7 @@ def run(stackargs):
 
     # tf_execgroup alias isn't necessary, but it
     # provides some standardization across tf stacks
-    stack.add_execgroup("config0-publish:::aws::ec2_server",
-                        "tf_execgroup")
+    stack.add_execgroup("config0-publish:::aws::ec2_server","tf_execgroup")
 
     # add substack
     stack.add_substack('config0-publish:::tf_executor')
@@ -143,32 +142,15 @@ def run(stackargs):
                        execgroup_name=stack.tf_execgroup.name,
                        provider="aws",
                        resource_name=stack.hostname,
-                       resource_type="server",
-                       terraform_type="aws_instance")
+                       resource_type="server")
 
-    # terraform resource keys
-    # to transfer to db for querying
-    tf.include(keys=["id",
-                     "ami",
-                     "arn",
-                     "availability_zone",
-                     "private_dns",
-                     "private_ip",
-                     "public_dns",
-                     "public_ip"])
+    tf.include(values={
+        "aws_default_region":stack.aws_default_region,
+        "hostname":stack.hostname
+    })
 
-    # terraform resource keys
-    # to map for ease of query in db
-    tf.include(maps={"_id": "id",
-                     "region": "aws_default_region"})
-
-    # resource output to show
-    # on saas ui
-    tf.output(keys=["id",
-                    "ami",
-                    "arn",
-                    "private_ip",
-                    "public_ip"])
+    # resource output to show on saas ui
+    tf.output(keys=["id", "private_ip","public_ip"])
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,
