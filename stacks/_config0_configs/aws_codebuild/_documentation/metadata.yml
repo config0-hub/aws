@@ -1,0 +1,16 @@
+desc: Creates and configures an AWS CodeBuild project with customizable build specifications and Docker registry integration.
+release: 0.0.1
+author: Gary Leong <gary@config0.com>
+license: GNU General Public License v3.0
+categories: 
+   - aws
+   - codebuild
+   - cloud
+   - public_cloud
+tags:
+   - codebuild
+   - host
+   - aws
+   - infrastructure
+   - featured
+   - ci

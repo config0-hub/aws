@@ -1,0 +1,79 @@
+############################################################
+# Build Stage: Prepares the Python application and dependencies
+############################################################
+
+# Use the official Python image from AWS ECR as the base image
+ARG lang_version=3.9
+FROM public.ecr.aws/docker/library/python:${lang_version} as build
+
+# Set the Python version as an environment variable
+ARG lang_version=3.9
+ENV LANG_VERSION=$lang_version
+
+# Create a directory to store the Lambda package
+RUN mkdir -p /var/tmp/package/lambda
+
+# Create a Python virtual environment
+RUN /bin/bash -c "cd /var/tmp && \
+    python3 -m venv /var/tmp/venv"
+
+# Copy the requirements file and source code into the container
+COPY requirements.txt /tmp/requirements.txt
+COPY src.tar.gz /var/tmp/venv/lib/python${LANG_VERSION}/site-packages/
+
+# Set the working directory to the virtual environment's site-packages
+WORKDIR /var/tmp/venv/lib/python${LANG_VERSION}/site-packages
+
+# Install dependencies in the virtual environment
+RUN /bin/bash -c "source /var/tmp/venv/bin/activate && \
+    pip3 install setuptools_rust && \
+    pip3 install -r /tmp/requirements.txt && \
+    rm -rf /tmp/requirements.txt"
+
+# Move the site-packages directory to a new location for the next stage
+RUN mv /var/tmp/venv/lib/python${LANG_VERSION}/site-packages /var/tmp/app
+
+
+############################################################
+# Upload Stage: Packages the application and prepares it for upload to S3
+############################################################
+
+# Use a lightweight Alpine Linux image as the base image
+FROM public.ecr.aws/docker/library/alpine:3.18.4
+
+# Install Python and pip
+RUN apk add --no-cache python3 py3-pip && \
+    rm -rf /var/cache/apk/*
+
+# Install the AWS CLI
+RUN pip3 install --no-cache-dir awscli
+
+# Install zip, tar, and gzip for packaging
+RUN apk add --no-cache zip tar gzip && \
+    rm -rf /var/cache/apk/*
+
+# Define build arguments for the Lambda package name and S3 bucket
+ARG pkg_name=PleaseSetPkgName
+ENV LAMBDA_PKG_NAME=$pkg_name
+
+ARG s3_bucket=PleaseSetS3Bucket
+ENV S3_BUCKET=$s3_bucket
+
+# Copy the application from the build stage
+COPY --from=build /var/tmp/app /var/tmp/app
+
+# Extract the source code and clean up the tar.gz file
+RUN cd /var/tmp/app && \
+    tar xvfz src.tar.gz . && \
+    rm -rf src.tar.gz
+
+# Set permissions for the `config0_common` directory
+RUN chmod 755 -R /var/tmp/app/config0_common
+
+# Package the application into a ZIP file
+RUN mkdir -p /var/tmp/package/lambda && \
+    cd /var/tmp/app && \
+    zip -r9 /var/tmp/package/lambda/$LAMBDA_PKG_NAME .
+
+# Set the entrypoint to the AWS CLI for S3 uploads
+ENTRYPOINT ["aws", "s3"]

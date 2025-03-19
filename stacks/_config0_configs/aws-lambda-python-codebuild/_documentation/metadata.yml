@@ -1,0 +1,15 @@
+desc: Creates Python Lambda function with AWS CodeBuild packaging
+release: 0.0.1
+author: Gary Leong <gary@config0.com>
+license: GPL-3.0
+categories: 
+   - aws
+   - cloud
+   - public_cloud
+tags:
+   - lambda
+   - config0-core
+   - config0_saas
+   - config0
+   - aws
+   - infrastructure

@@ -1,0 +1,16 @@
+desc: The stack generates an SSH key pair and uploads it to AWS EC2.
+release: 0.0.1
+author: Gary Leong <gary@config0.com>
+license: GNU General Public License v3.0
+categories: 
+   - ssh_key
+   - cloud
+   - public_cloud
+tags:
+   - aws
+   - ssh_key
+   - host
+   - ec2
+   - infrastructure
+   - featured
+   - featured_infrastructure
