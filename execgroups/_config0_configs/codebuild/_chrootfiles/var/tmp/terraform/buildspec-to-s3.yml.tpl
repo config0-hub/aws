@@ -34,6 +34,7 @@ phases:
   post_build:
     commands:
       - echo "export CODEBUILD_BUILD_ARN=$CODEBUILD_BUILD_ARN" > /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_ID=$CODEBUILD_BUILD_ID" >> /tmp/codebuild.env ; echo "export CODEBUILD_BUILD_NUMBER=$CODEBUILD_BUILD_NUMBER" >> /tmp/codebuild.env
+      - [[ "$1" != *.zip ]] && mv "$1" "$1.zip" || echo "File already has .zip extension"
       - aws s3 cp /tmp/$COMMIT_HASH.zip s3://$S3_BUCKET/$COMMIT_HASH/$COMMIT_HASH.zip
       - aws s3 cp /tmp/codebuild.env s3://$S3_BUCKET/$COMMIT_HASH/codebuild.env
       - echo "" ; cat /tmp/codebuild.env ; echo ""
