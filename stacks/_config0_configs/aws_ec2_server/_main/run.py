@@ -154,7 +154,6 @@ def run(stackargs):
     stack.set_variable("timeout", 600)
 
     # use the terraform constructor (helper)
-    # but this is optional
     tf = TFConstructor(stack=stack,
                        execgroup_name=stack.tf_execgroup.name,
                        provider="aws",
