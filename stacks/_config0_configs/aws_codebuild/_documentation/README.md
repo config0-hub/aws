@@ -1,3 +1,6 @@
+Based on the GitHub repository content provided, I can create an updated README for the AWS CodeBuild stack. The content shows files in the lambda_trigger_stepf execgroup and a resource_wrapper shellout configuration, which should be included in the dependencies section.
+
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 # AWS CodeBuild
 
 ## Description
@@ -47,10 +50,14 @@ This stack creates and configures an AWS CodeBuild project with customizable env
 ## Dependencies
 
 ### Substacks
-- [config0-publish:::tf_executor](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/tf_executor)
+- [config0-publish:::tf_executor](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/tf_executor/default)
 
 ### Execgroups
-- [config0-publish:::aws::codebuild](https://api-app.config0.com/web_api/v1.0/exec/groups/config0-publish/aws/codebuild)
+- [config0-publish:::aws::codebuild](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/aws/codebuild/default)
+- [config0-publish:::github::lambda_trigger_stepf](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/github/lambda_trigger_stepf/default)
+
+### Shelloutconfigs
+- [config0-publish:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/shelloutconfigs/config0-publish/terraform/resource_wrapper/default)
 
 ## License
 Copyright (C) 2025 Gary Leong <gary@config0.com>
@@ -58,3 +65,4 @@ Copyright (C) 2025 Gary Leong <gary@config0.com>
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, version 3 of the License.
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
