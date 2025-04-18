@@ -1,4 +1,4 @@
-desc: The stack uploads SSH public key to AWS for resource access
+desc: Uploads SSH public key to AWS for EC2 resource access
 release: 0.0.1
 author: Gary Leong <gary@config0.com>
 license: GNU General Public License v3.0

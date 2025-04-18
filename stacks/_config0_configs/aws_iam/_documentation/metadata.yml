@@ -1,4 +1,4 @@
-desc: Creates AWS IAM credentials with customizable policies for access to AWS services
+desc: Creates AWS IAM credentials with customizable policies for secure AWS service access
 release: 0.0.1
 author: Gary Leong <gary@config0.com>
 license: GNU General Public License v3.0

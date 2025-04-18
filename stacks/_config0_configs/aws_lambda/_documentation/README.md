@@ -8,8 +8,8 @@ This stack creates and configures an AWS Lambda function with customizable setti
 ### Required Variables
 | Name | Description | Default |
 |------|-------------|---------|
-| s3_bucket | S3 bucket name |  |
-| lambda_name | Lambda function name |  |
+| s3_bucket | S3 bucket name | &nbsp; |
+| lambda_name | Lambda function name | &nbsp; |
 
 ### Optional Variables
 | Name | Description | Default |
@@ -18,31 +18,28 @@ This stack creates and configures an AWS Lambda function with customizable setti
 | runtime | Configuration for runtime | python3.9 |
 | memory_size | Configuration for memory size | 256 |
 | lambda_timeout | Lambda function timeout (seconds) | 900 |
-| lambda_layers | Lambda function layers |  |
-| s3_key | Lambda function code S3 key |  |
-| policy_template_hash | IAM policy templates in base64 |  |
-| lambda_env_vars_hash | Lambda environment variables in base64 |  |
+| lambda_layers | Lambda function layers | &nbsp; |
+| s3_key | Lambda function code S3 key | &nbsp; |
+| policy_template_hash | IAM policy templates in base64 | &nbsp; |
+| lambda_env_vars_hash | Lambda environment variables in base64 | &nbsp; |
 | aws_default_region | Default AWS region | eu-west-1 |
-
-## Features
-- Creates AWS Lambda functions with configurable settings
-- Supports custom IAM policies
-- Configurable environment variables
-- Integration with S3 for Lambda code deployment
-- Sets up proper logging permissions
-- Default assume role policies for Lambda execution
 
 ## Dependencies
 
 ### Substacks
-- [config0-publish:::tf_executor](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/tf_executor)
+- [config0-publish:::tf_executor](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/tf_executor/default)
 
 ### Execgroups
-- [config0-publish:::aws::add_lambda](https://api-app.config0.com/web_api/v1.0/exec/groups/config0-publish/aws/add_lambda)
+- [config0-publish:::aws::add_lambda](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/aws/add_lambda/default)
+
+### Shelloutconfigs
+- [config0-publish:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/shelloutconfigs/config0-publish/terraform/resource_wrapper/default)
 
 ## License
+<pre>
 Copyright (C) 2025 Gary Leong <gary@config0.com>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, version 3 of the License.
+</pre>

@@ -20,27 +20,29 @@ from config0_publisher.terraform import TFConstructor
 
 def _get_ssh_public_key(stack):
 
-    _lookup = {"must_be_one": True,
-               "resource_type": "ssh_key_pair",
-               "name": stack.key_name}
+    _lookup = {
+        "must_be_one": True,
+        "resource_type": "ssh_key_pair",
+        "name": stack.key_name
+    }
+    
     try:
-        results = stack.get_resource(decrypt=True,
-                                     **_lookup)[0]
+        results = stack.get_resource(decrypt=True, **_lookup)[0]
     except:
         results = None
 
     if results:
         stack.logger.debug(f"found public key {_lookup}")
-
+        
     if not results:
-
-        _lookup = {"must_be_one": True,
-                   "resource_type": "ssh_public_key",
-                   "name": stack.key_name}
+        _lookup = {
+            "must_be_one": True,
+            "resource_type": "ssh_public_key",
+            "name": stack.key_name
+        }
 
         try:
-            results = stack.get_resource(decrypt=True,
-                                         **_lookup)[0]
+            results = stack.get_resource(decrypt=True, **_lookup)[0]
         except:
             results = None
 
@@ -48,19 +50,18 @@ def _get_ssh_public_key(stack):
             stack.logger.debug(f"found public key {_lookup}")
 
     if not results:
-
         # inputvars are more generic so
         # we only take values key field
-
-        _lookup = {"must_be_one": True,
-                   "resource_type": "inputvars",
-                   "name": stack.key_name,
-                   "fields": ["values"],
-                   "flatten": True}
+        _lookup = {
+            "must_be_one": True,
+            "resource_type": "inputvars",
+            "name": stack.key_name,
+            "fields": ["values"],
+            "flatten": True
+        }
 
         try:
-            results = stack.get_resource(decrypt=True,
-                                         **_lookup)[0]
+            results = stack.get_resource(decrypt=True, **_lookup)[0]
         except:
             results = None
 
@@ -129,20 +130,14 @@ def run(stackargs):
         raise Exception(msg)
 
     if not stack.get_attr("public_key") and stack.inputvars.get("public_key"):
-
         stack.logger.debug_highlight("public key found in inputvars")
-
         stack.set_variable("public_key",
                            stack.inputvars["public_key"],
                            tags="tfvar",
                            types="str")
-
     elif not stack.get_attr("public_key"):
-
         stack.logger.debug_highlight("public key found in resources table")
-
         _public_key = _get_ssh_public_key(stack)
-
         stack.set_variable("public_key",
                            _public_key,
                            tags="tfvar",
@@ -160,7 +155,6 @@ def run(stackargs):
                        resource_type="ssh_public_key")
 
     # finalize the tf_executor
-    stack.tf_executor.insert(display=True,
-                             **tf.get())
+    stack.tf_executor.insert(display=True, **tf.get())
 
     return stack.get_results()

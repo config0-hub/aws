@@ -78,7 +78,7 @@ def run(stackargs):
                              tags="tfvar",
                              types="str")
 
-    stack.parse.add_optional(key="security_group_ids",   # comma delimited
+    stack.parse.add_optional(key="security_group_ids",  # comma delimited
                              types="str")
 
     stack.parse.add_optional(key="sg_id",

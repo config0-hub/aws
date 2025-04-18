@@ -1,4 +1,3 @@
-'''
 # Copyright (C) 2025 Gary Leong <gary@config0.com>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -13,38 +12,44 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-'''
 
 from config0_publisher.terraform import TFConstructor
 
 
 def _default_policy():
-
-    policy = {"Version": "2012-10-17",
-              "Statement": [{"Action": ["logs:CreateLogGroup",
-                                        "logs:CreateLogStream",
-                                        "logs:PutLogEvents"],
-                             "Resource": "arn:aws:logs:*:*:*",
-                             "Effect": "Allow"}]
-              }
-
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                "Resource": "arn:aws:logs:*:*:*",
+                "Effect": "Allow"
+            }
+        ]
+    }
     return policy
 
 
 def _assume_default_policy():
-
-    policy = {"Version": "2012-10-17",
-              "Statement": [{"Action": "sts:AssumeRole",
-                             "Principal": {"Service": "lambda.amazonaws.com"},
-                             "Effect": "Allow",
-                             "Sid": ""}]
-              }
-
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": "sts:AssumeRole",
+                "Principal": {"Service": "lambda.amazonaws.com"},
+                "Effect": "Allow",
+                "Sid": ""
+            }
+        ]
+    }
     return policy
 
 
 def run(stackargs):
-
     # instantiate authoring stack
     stack = newStack(stackargs)
 
@@ -121,7 +126,8 @@ def run(stackargs):
     else:
         lambda_env_vars = {}
 
-    stack.set_variable("timeout", 600)  # it should not take longer than 10 minutes to establish the lambda function
+    # It should not take longer than 10 minutes to establish the lambda function
+    stack.set_variable("timeout", 600)
 
     stack.set_variable("lambda_env_vars",
                        lambda_env_vars,
@@ -142,15 +148,15 @@ def run(stackargs):
     tf.include(maps={"id": "arn"})
 
     tf.output(keys=["s3_key",
-                    "s3_bucket",
-                    "memory_size",
-                    "runtime",
-                    "handler",
-                    "layers",
-                    "arn"])
+                   "s3_bucket",
+                   "memory_size",
+                   "runtime",
+                   "handler",
+                   "layers",
+                   "arn"])
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,
-                             **tf.get())
+                            **tf.get())
 
     return stack.get_results()

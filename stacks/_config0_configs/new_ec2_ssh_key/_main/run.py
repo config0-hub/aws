@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 def run(stackargs):
 
-    # instantiate authoring stack
+    # Instantiate authoring stack
     stack = newStack(stackargs)
 
     # Add default variables
@@ -28,11 +28,9 @@ def run(stackargs):
     stack.parse.add_optional(key="run_id")
     stack.parse.add_optional(key="job_instance_id")
     stack.parse.add_optional(key="job_id")
+    stack.parse.add_optional(key="aws_default_region", default="us-east-1")
 
-    stack.parse.add_optional(key="aws_default_region",
-                             default="us-east-1")
-
-    # declare execution groups
+    # Declare execution groups
     stack.add_substack("config0-publish:::new_ssh_key")
     stack.add_substack("config0-publish:::ec2_ssh_upload")
 
@@ -41,40 +39,45 @@ def run(stackargs):
     stack.init_substacks()
 
     if not stack.get_attr("key_name") and stack.get_attr("name"):
-        stack.set_variable("key_name",
-                           stack.name)
+        stack.set_variable("key_name", stack.name)
 
     if not stack.get_attr("key_name"):
         msg = "key_name or name variable has to be set"
         raise Exception(msg)
 
-    # new ssh key
-    arguments = {"key_name": stack.key_name,
-                 "run_id": stack.run_id,
-                 "schedule_id": stack.schedule_id,
-                 "job_instance_id": stack.job_instance_id,
-                 "job_id": stack.job_id}
+    # New ssh key
+    arguments = {
+        "key_name": stack.key_name,
+        "run_id": stack.run_id,
+        "schedule_id": stack.schedule_id,
+        "job_instance_id": stack.job_instance_id,
+        "job_id": stack.job_id
+    }
 
-    inputargs = {"arguments": arguments,
-                 "automation_phase": "infrastructure",
-                 "human_description": f'create ssh key name {stack.key_name}'}
+    inputargs = {
+        "arguments": arguments,
+        "automation_phase": "infrastructure",
+        "human_description": f'Create SSH key name {stack.key_name}'
+    }
 
-    stack.new_ssh_key.insert(display=True,
-                             **inputargs)
+    stack.new_ssh_key.insert(display=True, **inputargs)
 
-    # upload ssh key
-    arguments = {"key_name": stack.key_name,
-                 "schedule_id": stack.schedule_id,
-                 "run_id": stack.run_id,
-                 "job_instance_id": stack.job_instance_id,
-                 "job_id": stack.job_id,
-                 "aws_default_region": stack.aws_default_region}
+    # Upload ssh key
+    arguments = {
+        "key_name": stack.key_name,
+        "schedule_id": stack.schedule_id,
+        "run_id": stack.run_id,
+        "job_instance_id": stack.job_instance_id,
+        "job_id": stack.job_id,
+        "aws_default_region": stack.aws_default_region
+    }
                  
-    inputargs = {"arguments": arguments,
-                 "automation_phase": "infrastructure",
-                 "human_description": f'upload ssh_public_key {stack.key_name} to EC2'}
+    inputargs = {
+        "arguments": arguments,
+        "automation_phase": "infrastructure",
+        "human_description": f'Upload SSH public key {stack.key_name} to EC2'
+    }
 
-    stack.ec2_ssh_upload.insert(display=True,
-                                **inputargs)
+    stack.ec2_ssh_upload.insert(display=True, **inputargs)
 
     return stack.get_results()

@@ -41,14 +41,10 @@ def _get_default_policy(stack):
         ]
     }
 
-    if stack.get_attr("allows_hash"):
+    if stack.get_attr("allows_hash") or stack.get_attr("denies_hash"):
         policy["Statement"] = []
 
     if stack.get_attr("denies_hash"):
-        policy["Statement"] = []
-
-    if stack.get_attr("denies_hash"):
-
         denies = stack.b64_decode(stack.denies_hash)
 
         for _deny in denies:
@@ -61,7 +57,6 @@ def _get_default_policy(stack):
             policy["Statement"].append(_statement)
 
     if stack.get_attr("allows_hash"):
-
         allows = stack.b64_decode(stack.allows_hash)
 
         for _allow in allows:

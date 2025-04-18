@@ -1,4 +1,4 @@
-desc: The stack generates an SSH key pair and uploads it to AWS EC2.
+desc: Creates and uploads SSH key pairs to AWS EC2 for secure instance access.
 release: 0.0.1
 author: Gary Leong <gary@config0.com>
 license: GNU General Public License v3.0

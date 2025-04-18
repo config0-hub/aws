@@ -16,24 +16,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 def _set_codebuild_image(stack):
-
     if stack.runtime == "python3.9":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:5.0')
+        stack.set_variable("build_image", 'aws/codebuild/standard:5.0')
     elif stack.runtime == "python3.10":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:6.0')
+        stack.set_variable("build_image", 'aws/codebuild/standard:6.0')
     elif stack.runtime == "python3.11":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
+        stack.set_variable("build_image", 'aws/codebuild/standard:7.0')
     else:
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
+        stack.set_variable("build_image", 'aws/codebuild/standard:7.0')
 
 
 # ref 4353253452354
 def _get_buildspec_hash_v1(stack):
-
     contents_1 = f'''version: 0.2
 phases:
   install:
@@ -76,13 +70,11 @@ phases:
 '''
  
     contents = contents_1 + contents_2 + contents_3
-
     return stack.b64_encode(contents)
 
 
 # ref 4353253452354
 def _get_buildspec_hash_v2(stack):
-
     contents_1 = f'''version: 0.2
 phases:
   install:
@@ -112,12 +104,10 @@ phases:
 '''
  
     contents = contents_1 + contents_3
-
     return stack.b64_encode(contents)
 
 
 def run(stackargs):
-
     import json
     import os
 
@@ -280,7 +270,6 @@ def run(stackargs):
         "human_description": f'Create lambda function for {stack.lambda_name}'
     }
 
-    stack.aws_lambda.insert(display=True,
-                            **inputargs)
+    stack.aws_lambda.insert(display=True, **inputargs)
 
     return stack.get_results()

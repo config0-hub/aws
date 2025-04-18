@@ -36,14 +36,6 @@ This stack creates and configures an AWS CodeBuild project with customizable env
 | subnet_ids | Subnet ID list | null |
 | vpc_id | VPC network identifier | null |
 
-## Features
-- Supports multiple Docker registry types (ECR, DockerHub)
-- Automatically generates buildspec.yml files if not provided
-- Custom build, pre-build, and post-build phases
-- Integration with AWS Parameter Store (SSM)
-- VPC configuration support for network-isolated builds
-- Environment variable management for build processes
-
 ## Dependencies
 
 ### Substacks
@@ -51,7 +43,6 @@ This stack creates and configures an AWS CodeBuild project with customizable env
 
 ### Execgroups
 - [config0-publish:::aws::codebuild](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/aws/codebuild/default)
-- [config0-publish:::github::lambda_trigger_stepf](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/github/lambda_trigger_stepf/default)
 
 ### Shelloutconfigs
 - [config0-publish:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/shelloutconfigs/config0-publish/terraform/resource_wrapper/default)
