@@ -36,7 +36,7 @@ from config0_publisher.loggerly import Config0Logger
 from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
 from config0_publisher.serialization import b64_decode
-from config0_publisher.fileutils import zipcli
+from config0_publisher.fileutils import pyzip
 from config0_publisher.utilities import id_generator2
 
 
@@ -143,7 +143,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
         abs_app_dir = self._get_fqn_app_dir_path()
         temp_filename = f'{id_generator2()}.zip'
 
-        srcfile = zipcli(
+        srcfile = pyzip(
             abs_app_dir,
             self.tmpdir,
             temp_filename,
