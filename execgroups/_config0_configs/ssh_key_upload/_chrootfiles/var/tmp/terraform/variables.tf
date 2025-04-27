@@ -14,3 +14,8 @@ variable "public_key" {
   sensitive   = true
 }
 
+variable "cloud_tags" {
+  description = "Additional tags as a map"
+  type        = map(string)
+  default     = {}
+}
