@@ -16,39 +16,6 @@
 from config0_publisher.terraform import TFConstructor
 
 
-def _default_policy():
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Action": [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents"
-                ],
-                "Resource": "arn:aws:logs:*:*:*",
-                "Effect": "Allow"
-            }
-        ]
-    }
-    return policy
-
-
-def _assume_default_policy():
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Action": "sts:AssumeRole",
-                "Principal": {"Service": "lambda.amazonaws.com"},
-                "Effect": "Allow",
-                "Sid": ""
-            }
-        ]
-    }
-    return policy
-
-
 def run(stackargs):
     # instantiate authoring stack
     stack = newStack(stackargs)

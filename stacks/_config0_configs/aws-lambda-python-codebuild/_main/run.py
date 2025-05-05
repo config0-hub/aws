@@ -27,8 +27,6 @@ def _set_codebuild_image(stack):
 
 
 # ref 4353253452354
-def _get_buildspec_hash_v1(stack):
-    contents_1 = f'''version: 0.2
 phases:
   install:
     on-failure: ABORT
