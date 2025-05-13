@@ -16,63 +16,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 def _set_codebuild_image(stack):
+
     if stack.runtime == "python3.9":
-        stack.set_variable("build_image", 'aws/codebuild/standard:5.0')
+        stack.set_variable("build_image",
+                           'aws/codebuild/standard:5.0')
     elif stack.runtime == "python3.10":
-        stack.set_variable("build_image", 'aws/codebuild/standard:6.0')
+        stack.set_variable("build_image",
+                           'aws/codebuild/standard:6.0')
     elif stack.runtime == "python3.11":
-        stack.set_variable("build_image", 'aws/codebuild/standard:7.0')
+        stack.set_variable("build_image",
+                           'aws/codebuild/standard:7.0')
     else:
-        stack.set_variable("build_image", 'aws/codebuild/standard:7.0')
-
-
-# ref 4353253452354
-phases:
-  install:
-    on-failure: ABORT
-    commands:
-      - echo "Installing system dependencies..."
-      - apt-get update && apt-get install -y zip
-
-  pre_build:
-    on-failure: ABORT
-    commands:
-      - aws s3 cp s3://{stack.tmp_bucket}/{stack.stateful_id}/state/src.{stack.stateful_id}.zip /tmp/{stack.stateful_id}.zip --quiet
-      - mkdir -p {stack.run_share_dir}
-      - unzip -o /tmp/{stack.stateful_id}.zip -d {stack.run_share_dir}/
-      - rm -rf /tmp/{stack.stateful_id}.zip 
-      - echo "Creating a virtual environment..."
-      - cd {stack.run_share_dir}/ && python3 -m venv venv
-'''
-
-    contents_2 = '''      - export PYTHON_VERSION=`python -c "import sys;print(f'{sys.version_info.major}.{sys.version_info.minor}')"`
-'''
-
-    contents_3 = f'''
-  build:
-    on-failure: ABORT
-    commands:
-      - cd {stack.run_share_dir}/
-      - . venv/bin/activate
-      - echo "Installing project dependencies..."
-      - pip install -r src/requirements.txt
-      - cp -rp src/* venv/lib/python$PYTHON_VERSION/site-packages/
-
-  post_build:
-    commands:
-      - cd {stack.run_share_dir}/
-      - cd venv/lib/python$PYTHON_VERSION/site-packages/
-      - zip -q -r /tmp/{stack.lambda_name}.zip .
-      - aws s3 cp /tmp/{stack.lambda_name}.zip s3://{stack.tmp_bucket}/{stack.stateful_id}/state/src.{stack.stateful_id}.zip --quiet
-
-'''
- 
-    contents = contents_1 + contents_2 + contents_3
-    return stack.b64_encode(contents)
-
+        stack.set_variable("build_image",
+                           'aws/codebuild/standard:7.0')
 
 # ref 4353253452354
-def _get_buildspec_hash_v2(stack):
+def _get_buildspec_hash(stack):
+
     contents_1 = f'''version: 0.2
 phases:
   install:
@@ -102,10 +62,12 @@ phases:
 '''
  
     contents = contents_1 + contents_3
+
     return stack.b64_encode(contents)
 
 
 def run(stackargs):
+
     import json
     import os
 
@@ -207,7 +169,7 @@ def run(stackargs):
         'WORKING_DIR': stack.run_share_dir,
         'BUILD_IMAGE': stack.build_image,
         'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
-        'BUILDSPEC_HASH': _get_buildspec_hash_v2(stack),
+        'BUILDSPEC_HASH': _get_buildspec_hash(stack),
         'BUILD_TIMEOUT': stack.build_timeout,
         "AWS_DEFAULT_REGION": stack.aws_default_region
     }
@@ -268,6 +230,7 @@ def run(stackargs):
         "human_description": f'Create lambda function for {stack.lambda_name}'
     }
 
-    stack.aws_lambda.insert(display=True, **inputargs)
+    stack.aws_lambda.insert(display=True,
+                            **inputargs)
 
     return stack.get_results()
