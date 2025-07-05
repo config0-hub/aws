@@ -22,7 +22,7 @@ phases:
 
   build:
     on-failure: ABORT
-    commands:   
+    commands:
       - cd $code_dir
       - git init
       - git remote add origin "$GIT_URL"

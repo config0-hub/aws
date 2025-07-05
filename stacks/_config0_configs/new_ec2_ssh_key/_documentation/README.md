@@ -26,16 +26,16 @@ None explicitly required, but either `key_name` or `name` must be set.
 
 ### Substacks
 
-- [config0-publish:::new_ssh_key](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/new_ssh_key/default)
-- [config0-publish:::ec2_ssh_upload](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/ec2_ssh_upload/default)
+- [config0-publish:::new_ssh_key](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/new_ssh_key)
+- [config0-publish:::ec2_ssh_upload](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/ec2_ssh_upload)
 
 ### Execgroups
 
-- [config0-publish:::github::lambda_trigger_stepf](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/github/lambda_trigger_stepf/default)
+None
 
 ### Shelloutconfigs
 
-- [config0-publish:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/shelloutconfigs/config0-publish/terraform/resource_wrapper/default)
+None
 
 ## License
 <pre>

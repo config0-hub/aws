@@ -79,7 +79,7 @@ env:
     def _default_prebuild_headers():
         contents = '''
   pre_build:
-    on-failure: ABORT
+    on-failure: CONTINUE
     commands:   
 '''
         return contents
@@ -114,7 +114,7 @@ env:
     def _default_build_headers():
         contents = '''
   build:
-    on-failure: ABORT
+    when: onSuccess
     commands:   
 '''
         return contents

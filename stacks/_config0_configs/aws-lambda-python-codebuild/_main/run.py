@@ -36,13 +36,13 @@ def _get_buildspec_hash(stack):
     contents_1 = f'''version: 0.2
 phases:
   install:
-    on-failure: ABORT
+    on-failure: CONTINUE
     commands:
       - echo "Installing system dependencies..."
       - apt-get update && apt-get install -y zip
 
   pre_build:
-    on-failure: ABORT
+    when: onSuccess
     commands:
       - aws s3 cp s3://{stack.tmp_bucket}/{stack.stateful_id}/state/src.{stack.stateful_id}.zip /tmp/{stack.stateful_id}.zip --quiet
       - mkdir -p {stack.share_dir}
@@ -53,12 +53,17 @@ phases:
 
     contents_3 = f'''
   build:
-    on-failure: ABORT
+    when: onSuccess
     commands:
       - cd {stack.run_share_dir}/
       - chmod 755 {stack.script_name}
       - ./{stack.script_name}
-
+      
+  post_build:
+    commands:
+      - date +%s > done
+      - echo "Uploading done to S3 bucket..."
+      - aws s3 cp done s3://{stack.tmp_bucket}/executions/{stack.execution_id}/done
 '''
  
     contents = contents_1 + contents_3
@@ -105,6 +110,9 @@ def run(stackargs):
     stack.parse.add_optional(key="stateful_id",
                              default="_random")
 
+    stack.parse.add_optional(key="execution_id",
+                             default="null")
+
     stack.parse.add_optional(key="share_dir",
                              default="/var/tmp/share")
 
@@ -137,6 +145,15 @@ def run(stackargs):
     stack.init_variables()
     stack.init_execgroups()
     stack.init_substacks()
+
+    if not stack.execution_id and os.environ.get("EXECUTION_ID"):
+        stack.execution_id = os.environ["EXECUTION_ID"]
+
+    if not stack.execution_id:
+        stack.execution_id = stack.queue_id
+
+    if not stack.execution_id:
+        raise Exception(f'execution_id need to be set')
 
     # ref 5490734650346
     stack.add_execgroup(f"{stack.config0_lambda_execgroup_name} {stack.py_to_lambda.name}",

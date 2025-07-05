@@ -39,7 +39,7 @@ resource "aws_codebuild_project" "default" {
   }
 
   source {
-    buildspec = data.template_file.buildspec.rendered
+    buildspec = local.buildspec_rendered
     type      = "NO_SOURCE"
   }
 
