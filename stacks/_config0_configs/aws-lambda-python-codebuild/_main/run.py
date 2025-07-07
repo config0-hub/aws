@@ -149,6 +149,9 @@ def run(stackargs):
     if not stack.execution_id and os.environ.get("EXECUTION_ID"):
         stack.execution_id = os.environ["EXECUTION_ID"]
 
+    if not stack.execution_id and os.environ.get("QUEUE_ID"):
+        stack.execution_id = os.environ["QUEUE_ID"]
+
     if not stack.execution_id:
         stack.execution_id = stack.queue_id
 
