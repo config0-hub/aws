@@ -111,7 +111,7 @@ def run(stackargs):
                              default="_random")
 
     stack.parse.add_optional(key="execution_id",
-                             default="null")
+                             default="_random")
 
     stack.parse.add_optional(key="share_dir",
                              default="/var/tmp/share")
@@ -145,18 +145,6 @@ def run(stackargs):
     stack.init_variables()
     stack.init_execgroups()
     stack.init_substacks()
-
-    if not stack.execution_id and os.environ.get("EXECUTION_ID"):
-        stack.execution_id = os.environ["EXECUTION_ID"]
-
-    if not stack.execution_id and os.environ.get("QUEUE_ID"):
-        stack.execution_id = os.environ["QUEUE_ID"]
-
-    if not stack.execution_id:
-        stack.execution_id = stack.queue_id
-
-    if not stack.execution_id:
-        raise Exception(f'execution_id need to be set')
 
     # ref 5490734650346
     stack.add_execgroup(f"{stack.config0_lambda_execgroup_name} {stack.py_to_lambda.name}",
