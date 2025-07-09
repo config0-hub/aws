@@ -111,7 +111,7 @@ def run(stackargs):
                              default="_random")
 
     stack.parse.add_optional(key="execution_id",
-                             default="_random")
+                             default="null")
 
     stack.parse.add_optional(key="share_dir",
                              default="/var/tmp/share")
@@ -151,6 +151,11 @@ def run(stackargs):
                         "buildgroups",
                         overide=True)
 
+    if not stack.execution_id and os.environ.get("EXECUTION_ID"):
+        stack.set_variable("execution_id", os.environ["EXECUTION_ID"])
+    elif not stack.execution_id:
+        stack.set_variable("execution_id", stack.stateful_id)
+
     # reset exec groups
     stack.reset_execgroups()
 
@@ -169,6 +174,7 @@ def run(stackargs):
         'PYTHON_VERSION': stack.runtime.split("python")[1],
         'S3_BUCKET': stack.s3_bucket,
         'STATEFUL_ID': stack.stateful_id,
+        'EXECUTION_ID': stack.execution_id,
         'TMP_BUCKET': stack.tmp_bucket,
         'SHARE_DIR': stack.share_dir,
         'WORKING_SUBDIR': 'var/tmp/lambda',
