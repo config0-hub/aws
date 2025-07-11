@@ -185,6 +185,7 @@ def run(stackargs):
         'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
         'BUILDSPEC_HASH': _get_buildspec_hash(stack),
         'BUILD_TIMEOUT': stack.build_timeout,
+        'USE_CODEBUILD': "True",
         "AWS_DEFAULT_REGION": stack.aws_default_region
     }
 
