@@ -152,7 +152,7 @@ class CodebuildSrcFile(ResourceCmdHelper):
 
         cmd = (f'aws s3 cp {srcfile} '
                f's3://{self.buildparams["build_env_vars"]["UPLOAD_BUCKET"]}/'
-               f'{self.stateful_id}/state/src.{self.stateful_id}.zip')
+               f'{self.stateful_id}/state/src.{self.stateful_id}.zip --quiet')
 
         return self.execute(cmd)
 
@@ -219,7 +219,6 @@ class CodebuildSrcFile(ResourceCmdHelper):
             exit(9)
 
         exit(0)
-
 
 if __name__ == "__main__":
     main = CodebuildSrcFile()
