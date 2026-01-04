@@ -210,6 +210,8 @@ def run(stackargs):
     if stack.cloud_tags_hash:
         inputargs["cloud_tags_hash"] = stack.cloud_tags_hash
 
+    inputargs["use_docker"] = "local"  # use docker to zip the lambda files
+
     stack.buildgroups.insert(**inputargs)
 
     # create lambda function

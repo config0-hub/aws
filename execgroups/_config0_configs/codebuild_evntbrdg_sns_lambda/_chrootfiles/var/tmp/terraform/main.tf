@@ -19,6 +19,10 @@ resource "aws_sns_topic" "builds" {
       }
     }
   })
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 resource "aws_sns_topic_subscription" "sns" {
