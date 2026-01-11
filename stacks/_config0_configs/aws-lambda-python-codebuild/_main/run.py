@@ -210,7 +210,7 @@ def run(stackargs):
     if stack.cloud_tags_hash:
         inputargs["cloud_tags_hash"] = stack.cloud_tags_hash
 
-    inputargs["use_docker"] = "300"  # use docker to zip the lambda files
+    inputargs["use_docker"] = "True"
 
     stack.buildgroups.insert(**inputargs)
 

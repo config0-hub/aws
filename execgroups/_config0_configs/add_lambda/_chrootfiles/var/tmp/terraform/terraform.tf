@@ -4,7 +4,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
     # OpenTofu 1.8.8 doesn't support the template provider natively
     # We use the hashicorp/template provider for backward compatibility

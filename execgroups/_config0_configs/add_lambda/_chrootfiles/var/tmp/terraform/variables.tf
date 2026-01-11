@@ -40,7 +40,7 @@ variable "handler" {
 variable "runtime" {
   description = "Lambda runtime environment"
   type        = string
-  default     = "python3.9"
+  default     = "python3.11"
 }
 
 variable "lambda_layers" {

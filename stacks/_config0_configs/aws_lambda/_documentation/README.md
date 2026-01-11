@@ -15,7 +15,7 @@ This stack creates and configures an AWS Lambda function with customizable setti
 | Name | Description | Default |
 |------|-------------|---------|
 | handler | Lambda function handler | app.handler |
-| runtime | Configuration for runtime | python3.9 |
+| runtime | Configuration for runtime | python3.11 |
 | memory_size | Configuration for memory size | 256 |
 | lambda_timeout | Lambda function timeout (seconds) | 900 |
 | lambda_layers | Lambda function layers | &nbsp; |

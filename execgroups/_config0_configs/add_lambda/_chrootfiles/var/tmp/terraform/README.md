@@ -27,7 +27,7 @@ module "lambda_function" {
   s3_key             = "path/to/lambda-code.zip"
   
   # Optional configurations
-  runtime            = "python3.9"
+  runtime            = "python3.11"
   handler            = "app.handler"
   memory_size        = 256
   lambda_timeout     = 60
@@ -60,7 +60,7 @@ module "lambda_function" {
 | Name | Description | Type | Default |
 |------|-------------|------|---------|
 | `handler` | Lambda function handler entry point (e.g., "app.handler") | `string` | `"app.handler"` |
-| `runtime` | Lambda runtime environment (e.g., "python3.9", "nodejs18.x") | `string` | `"python3.9"` |
+| `runtime` | Lambda runtime environment (e.g., "python3.11", "nodejs18.x") | `string` | `"python3.11"` |
 | `memory_size` | Amount of memory in MB allocated to the Lambda function (128-10240) | `number` | `128` |
 | `lambda_timeout` | Lambda function timeout in seconds (max 900) | `number` | `900` |
 | `lambda_layers` | Comma-separated list of Lambda layer ARNs to attach to the function | `string` | `null` |

@@ -35,7 +35,7 @@ def run(stackargs):
                              types="str")
 
     stack.parse.add_optional(key="runtime",
-                             default="python3.9",
+                             default="python3.11",
                              tags="tfvar,db",
                              types="str")
 
