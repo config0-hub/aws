@@ -1,0 +1,6 @@
+s3_bucket        = "lambda-bucket"
+lambda_name      = "test-lambda"
+cloud_tags       = { "yo":"mama"}
+lambda_env_vars  = { "ENV":"test","GIT_URL":"fake-giturl"}
+lambda_layers    = [ "arn:aws:lambda:eu-west-1:553035198032:layer:git-lambda2:8" ]
+aws_default_region = "eu-west-1"

@@ -1,0 +1,79 @@
+#!/usr/bin/env python
+"""
+AWS CodeBuild Shell Helper
+
+This script provides a shell interface for executing AWS CodeBuild operations.
+It decodes build parameters from environment variables and uses the CodebuildResourceHelper
+to execute the build process. The script exits with status code 0 on success
+and 9 on failure.
+"""
+
+# Copyright 2025 Gary Leong <gary@config0.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import os
+
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.serialization import b64_decode
+from config0_publisher.cloud.aws.codebuild import CodebuildResourceHelper
+
+
+class CodebuildShellout:
+    """Class to handle AWS CodeBuild operations from shell environment."""
+
+    def __init__(self):
+        """Initialize the CodeBuildShellout with parameters from environment variables."""
+        self.classname = 'CodebuildShellout'
+        self.logger = Config0Logger(self.classname, logcategory="cloudprovider")
+
+        if "CODEBUILD_PARAMS_HASH" not in os.environ:
+            raise EnvironmentError("CODEBUILD_PARAMS_HASH needs to be set as an env var")
+
+        try:
+            config0_buildparams = b64_decode(os.environ["CODEBUILD_PARAMS_HASH"])
+            self.buildparams = config0_buildparams.get("inputargs")
+
+            if config0_buildparams.get("env_vars"):
+                self.buildparams["build_env_vars"] = config0_buildparams["env_vars"]
+
+            if not self.buildparams:
+                raise ValueError("buildparams not found in CODEBUILD_PARAMS_HASH")
+        except ValueError as e:
+            raise ValueError(f"Error with build parameters: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode build parameters: {str(e)}")
+
+    def run(self):
+        """Execute the CodeBuild process using the provided build parameters."""
+        if not self.buildparams:
+            raise ValueError("buildparams need to be provided for Codebuild shellout")
+
+        try:
+            codebuild_helper = CodebuildResourceHelper(**self.buildparams)
+            codebuild_helper.run()
+
+            if codebuild_helper.results.get("status") is False:
+                self.logger.error("codebuild failed:")
+                exit(9)
+
+            exit(0)
+        except Exception as e:
+            self.logger.error(f"CodeBuild execution failed: {str(e)}")
+            exit(9)
+
+
+if __name__ == "__main__":
+    main = CodebuildShellout()
+    main.run()

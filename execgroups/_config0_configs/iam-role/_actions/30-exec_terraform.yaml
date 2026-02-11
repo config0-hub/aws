@@ -1,0 +1,4 @@
+asset_type: shelloutconfig
+env_vars: []
+shelloutconfigs:
+- config0-publish:::terraform::resource_wrapper
