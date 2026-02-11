@@ -58,3 +58,4 @@ else
     docker run --rm -i --env-file .env $DOCKER_TEMP_IMAGE cp ${SHARE_DIR}/${LAMBDA_PKG_DIR}/${LAMBDA_PKG_NAME}.zip s3://${S3_BUCKET}/${S3_KEY}.zip || exit 6
     rm -rf .env
 fi
+
