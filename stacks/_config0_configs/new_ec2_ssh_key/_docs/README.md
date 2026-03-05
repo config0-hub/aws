@@ -26,14 +26,14 @@ None explicitly required, but either `key_name` or `name` must be set.
 
 ### Substacks
 
-- [config0-publish:::new_ssh_key](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/new_ssh_key)
-- [config0-publish:::ec2_ssh_upload](https://api-app.config0.com/web_api/v1.0/stacks/config0-publish/ec2_ssh_upload)
+- [config0-hub:::config0_core::new_ssh_key](https://api-app.config0.com/web_api/v1.0/stacks/config0-hub/new_ssh_key)
+- [config0-hub:::aws::ec2_ssh_upload](https://api-app.config0.com/web_api/v1.0/stacks/config0-hub/ec2_ssh_upload)
 
 ### Execgroups
 
 None
 
-### Shelloutconfigs
+### Scripts
 
 None
 

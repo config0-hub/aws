@@ -118,14 +118,14 @@ def run(stackargs):
                              default="private")
 
     # substacks for volumes
-    stack.add_substack('config0-publish:::ebs_volume')
+    stack.add_substack('config0-hub:::aws_storage::ebs_volume')
 
     # tf_execgroup alias isn't necessary, but it
     # provides some standardization across tf stacks
-    stack.add_execgroup("config0-publish:::aws::ec2_server", "tf_execgroup")
+    stack.add_execgroup("config0-hub:::aws::ec2_server", "tf_execgroup")
 
     # add substack
-    stack.add_substack('config0-publish:::tf_executor')
+    stack.add_substack('config0-hub:::config0_core::tf_executor')
 
     # initialize
     stack.init_variables()

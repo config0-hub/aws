@@ -38,14 +38,14 @@ This stack creates an AWS EC2 instance with an optional EBS volume attachment. I
 ## Dependencies
 
 ### Substacks
-- [config0-publish:::ebs_volume](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/ebs_volume/default)
-- [config0-publish:::tf_executor](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-publish/tf_executor/default)
+- [config0-hub:::aws_storage::ebs_volume](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-hub/ebs_volume/default)
+- [config0-hub:::config0_core::tf_executor](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/stacks/config0-hub/tf_executor/default)
 
 ### Execgroups
-- [config0-publish:::aws::ec2_server](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-publish/aws/ec2_server/default)
+- [config0-hub:::aws::ec2_server](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/exec/groups/config0-hub/aws/ec2_server/default)
 
-### Shelloutconfigs
-- [config0-publish:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/shelloutconfigs/config0-publish/terraform/resource_wrapper/default)
+### Scripts
+- [config0-hub:::terraform::resource_wrapper](http://config0.http.redirects.s3-website-us-east-1.amazonaws.com/assets/scripts/config0-hub/terraform/resource_wrapper/default)
 
 ## License
 <pre>

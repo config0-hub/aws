@@ -134,11 +134,11 @@ def run(stackargs):
                              default=900)
 
     # declare execution groups
-    stack.add_execgroup("config0-publish:::aws::py_to_lambda-codebuild",
+    stack.add_execgroup("config0-hub:::aws::py_to_lambda-codebuild",
                         "py_to_lambda")
 
     # add substack
-    stack.add_substack('config0-publish:::aws_lambda')
+    stack.add_substack('config0-hub:::aws::aws_lambda')
 
     # initialize variables
     stack.init_variables()

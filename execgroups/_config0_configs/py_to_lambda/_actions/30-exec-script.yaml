@@ -1,4 +1,2 @@
-asset_type: shelloutconfig
-env_vars: []
-shelloutconfigs:
-- config0-publish:::aws::docker-to-lambda
+scripts:
+- config0-hub:::aws::docker-to-lambda.sh

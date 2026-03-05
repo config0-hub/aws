@@ -1,4 +1,2 @@
-asset_type: shelloutconfig
-env_vars: []
-shelloutconfigs:
-- config0-publish:::terraform::resource_wrapper
+scripts:
+- config0-hub:::terraform::resource_wrapper.sh
