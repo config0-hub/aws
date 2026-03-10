@@ -1,15 +1,14 @@
 desc: Creates AWS IAM credentials with customizable policies for secure AWS service access
-release: 0.0.1
+release: 0.1.0
 author: Gary Leong <gary@config0.com>
-license: GNU General Public License v3.0
-categories: 
+license: GPL-3.0
+categories:
    - aws
-   - authorization
-   - cloud
-   - public_cloud
+   - terraform
+   - infrastructure
 tags:
    - iam
-   - security_group
-   - config0
    - aws
+   - terraform
    - infrastructure
+   - security

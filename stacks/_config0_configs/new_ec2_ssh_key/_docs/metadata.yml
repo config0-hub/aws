@@ -1,16 +1,13 @@
 desc: Creates and uploads SSH key pairs to AWS EC2 for secure instance access.
-release: 0.0.1
+release: 0.1.0
 author: Gary Leong <gary@config0.com>
-license: GNU General Public License v3.0
-categories: 
-   - ssh_key
-   - cloud
-   - public_cloud
-tags:
+license: GPL-3.0
+categories:
    - aws
-   - ssh_key
-   - host
+   - ssh
+   - terraform
+tags:
    - ec2
-   - infrastructure
-   - featured
-   - featured_infrastructure
+   - ssh
+   - aws
+   - terraform

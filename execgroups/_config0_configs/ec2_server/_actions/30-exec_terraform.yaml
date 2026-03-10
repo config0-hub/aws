@@ -1,2 +1,2 @@
 scripts:
-- config0-hub:::terraform::resource_wrapper.sh
+- config0-hub:::terraform::resource_wrapper

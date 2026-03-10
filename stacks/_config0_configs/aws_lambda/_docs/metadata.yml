@@ -1,19 +1,14 @@
 desc: Creates and configures an AWS Lambda function with customizable runtime, memory and environment settings
-release: 0.0.1
+release: 0.3.0
 author: Gary Leong <gary@config0.com>
 license: GPL-3.0
-categories: 
+categories:
    - aws
    - lambda
-   - serverless
-   - cloud
-   - public_cloud
+   - terraform
 tags:
    - lambda
-   - function
-   - serverless
    - aws
-   - infrastructure
+   - terraform
+   - serverless
    - s3
-   - python
-   - runtime

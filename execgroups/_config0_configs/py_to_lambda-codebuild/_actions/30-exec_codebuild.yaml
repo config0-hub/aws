@@ -1,2 +1,2 @@
 scripts:
-- config0-hub:::aws::codebuild-srcfile.sh
+- config0-hub:::aws::codebuild-srcfile
