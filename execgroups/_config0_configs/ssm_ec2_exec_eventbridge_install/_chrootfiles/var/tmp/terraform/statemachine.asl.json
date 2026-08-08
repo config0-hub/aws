@@ -1,0 +1,72 @@
+{
+  "Comment": "ssm_ec2_exec_eventbridge — invoke the starter Lambda with waitForTaskToken, which fires an SSM command and stores the token server-side. The token is released later by the callback Lambda (EventBridge SSM status event) or the fallback Lambda (scheduled reconcile), not by the EC2 box.",
+  "StartAt": "ApplyDefaults",
+  "States": {
+    "ApplyDefaults": {
+      "Type": "Pass",
+      "Parameters": {
+        "input.$": "$",
+        "defaults": {
+          "timeout_seconds": 3600
+        }
+      },
+      "Next": "Merge"
+    },
+    "Merge": {
+      "Type": "Pass",
+      "Parameters": {
+        "merged.$": "States.JsonMerge($.defaults, $.input, false)"
+      },
+      "Next": "ComputeCallbackTimeout"
+    },
+    "ComputeCallbackTimeout": {
+      "Type": "Pass",
+      "Comment": "Callback bound (ASL Task TimeoutSecondsPath) = requested execution timeout + 600s grace (>= 2x the 60s fallback interval), so a lost event still goes terminal via the fallback instead of hanging indefinitely.",
+      "Parameters": {
+        "merged": {
+          "instance_id.$": "$.merged.instance_id",
+          "script.$": "$.merged.script",
+          "timeout_seconds.$": "$.merged.timeout_seconds",
+          "callback_timeout_seconds.$": "States.MathAdd($.merged.timeout_seconds, 600)"
+        }
+      },
+      "Next": "InvokeStarter"
+    },
+    "InvokeStarter": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {
+        "FunctionName": "${starter_function_arn}",
+        "Payload": {
+          "TaskToken.$": "$$.Task.Token",
+          "executionArn.$": "$$.Execution.Id",
+          "instance_id.$": "$.merged.instance_id",
+          "script.$": "$.merged.script",
+          "timeout_seconds.$": "$.merged.timeout_seconds"
+        }
+      },
+      "TimeoutSecondsPath": "$.merged.callback_timeout_seconds",
+      "ResultPath": "$.callback",
+      "Next": "IsSuccess"
+    },
+    "IsSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.callback.exit_code",
+          "NumericEquals": 0,
+          "Next": "Succeeded"
+        }
+      ],
+      "Default": "Failed"
+    },
+    "Succeeded": {
+      "Type": "Succeed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "SsmCommandFailed",
+      "Cause": "Remote command reported a non-zero exit_code via the task-token callback"
+    }
+  }
+}
