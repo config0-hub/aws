@@ -89,7 +89,7 @@ def run(stackargs):
                            types="str")
 
     if stack.get_attr("lambda_env_vars_hash"):
-        lambda_env_vars = stack.b64_decode(stack.lambda_env_vars_hash)
+        lambda_env_vars = stack.deserialize(stack.lambda_env_vars_hash, json=True)
     else:
         lambda_env_vars = {}
 

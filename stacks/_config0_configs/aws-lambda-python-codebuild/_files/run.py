@@ -48,7 +48,7 @@ phases:
       - mkdir -p {stack.share_dir}
       - mkdir -p {stack.run_share_dir}
       - unzip -o /tmp/{stack.stateful_id}.zip -d {stack.run_share_dir}/
-      - rm -rf /tmp/{stack.stateful_id}.zip 
+      - rm -rf /tmp/{stack.stateful_id}.zip
 '''
 
     contents_3 = f'''
@@ -57,17 +57,17 @@ phases:
       - cd {stack.run_share_dir}/
       - chmod 755 {stack.script_name}
       - ./{stack.script_name}
-      
+
   post_build:
     commands:
       - date +%s > done
       - echo "Uploading done to S3 bucket..."
       - aws s3 cp done s3://{stack.tmp_bucket}/executions/{stack.execution_id}/done
 '''
- 
+
     contents = contents_1 + contents_3
 
-    return stack.b64_encode(contents)
+    return stack.serialize(contents, json=False)
 
 
 def run(stackargs):
@@ -190,10 +190,9 @@ def run(stackargs):
 
     # we need to declare app initially - lambda app
     env_vars = {
-        'CODEBUILD_PARAMS_HASH': stack.b64_encode({
+        'CODEBUILD_PARAMS_HASH': stack.serialize({
             "env_vars": build_envs,
-            "build_env_vars": build_envs}
-        ),
+            "build_env_vars": build_envs}, json=False),
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
         "AWS_DEFAULT_REGION": stack.aws_default_region,
         'WORKING_DIR': stack.run_share_dir,
