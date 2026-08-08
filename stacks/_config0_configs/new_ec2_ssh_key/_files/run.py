@@ -71,7 +71,7 @@ def run(stackargs):
         "job_id": stack.job_id,
         "aws_default_region": stack.aws_default_region
     }
-
+                 
     inputargs = {
         "arguments": arguments,
         "automation_phase": "infrastructure",

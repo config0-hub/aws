@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from config0_publisher.terraform import TFConstructor
 
 
-class _BuildSpecs:
+class _BuildSpecs(object):
 
     def __init__(self, stack):
         self.classname = '_BuildSpecs'
@@ -27,24 +27,24 @@ class _BuildSpecs:
 
     def _init_buildspecs(self):
         try:
-            self.ssm_params = self.stack.deserialize(self.stack.ssm_params_hash, json=True)
+            self.ssm_params = self.stack.b64_decode(self.stack.ssm_params_hash)
         except Exception:
             self.ssm_params = {}
 
         try:
-            self.prebuild = self.stack.deserialize(self.stack.prebuild_hash, json=True)
+            self.prebuild = self.stack.b64_decode(self.stack.prebuild_hash)
         except Exception:
             self.prebuild = self._default_prebuild()
 
         if self.stack.get_attr("build_hash"):
-            self.build = self.stack.deserialize(self.stack.build_hash, json=True)
+            self.build = self.stack.b64_decode(self.stack.build_hash)
         elif self.stack.get_attr("docker_registry") == "ecr":
             self.build = self._default_docker_ecr()
         elif self.stack.get_attr("docker_registry") == "dockerhub":
             self.build = self._default_dockerhub()
 
         try:
-            self.postbuild = self.stack.deserialize(self.stack.postbuild_hash, json=True)
+            self.postbuild = self.stack.b64_decode(self.stack.postbuild_hash)
         except Exception:
             self.postbuild = self._default_postbuild()
 
@@ -80,7 +80,7 @@ env:
         contents = '''
   pre_build:
     on-failure: CONTINUE
-    commands:
+    commands:   
 '''
         return contents
 
@@ -114,7 +114,7 @@ env:
     def _default_build_headers():
         contents = '''
   build:
-    commands:
+    commands:   
 '''
         return contents
 
@@ -280,7 +280,7 @@ def run(stackargs):
     if not stack.get_attr("buildspec_hash"):
         _buildspec = _BuildSpecs(stack)
         stack.set_variable("buildspec_hash",
-                           stack.serialize(_buildspec.get(), json=False),
+                           stack.b64_encode(_buildspec.get()),
                            tags="tfvar",
                            types="str")
 
@@ -298,7 +298,7 @@ def run(stackargs):
 
     if stack.get_attr("codebuild_env_vars_hash"):
         stack.set_variable("codebuild_env_vars",
-                           stack.deserialize(stack.codebuild_env_vars_hash, json=True),
+                           stack.b64_decode(stack.codebuild_env_vars_hash),
                            tags="tfvar",
                            types="dict")
 
