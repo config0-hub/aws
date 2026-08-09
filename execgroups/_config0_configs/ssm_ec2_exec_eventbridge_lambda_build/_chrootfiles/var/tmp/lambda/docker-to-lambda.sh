@@ -5,8 +5,10 @@
 #
 #   - STANDALONE (default): docker build each image, then docker create +
 #     docker cp the zip out to build/<name>.zip. No live AWS.
-#   - UPLOAD_TO_S3=true: additionally `aws s3 cp` each zip to S3, so the
+#   - UPLOAD_TO_S3=true: additionally upload each zip to S3, so the
 #     authoring install stack can run this SAME script under CodeBuild.
+#     Uses the presigned PUT URL in PRESIGNED_PUT_<NAME> when presigned_puts.env
+#     is present next to this script, else `aws s3 cp` with local creds.
 #
 # Usage:
 #   docker-to-lambda.sh                 # build all three lambdas
@@ -34,6 +36,14 @@ export KEY_PREFIX=${KEY_PREFIX:=}
 LAMBDAS=("$@")
 if [ ${#LAMBDAS[@]} -eq 0 ]; then
     LAMBDAS=(starter callback fallback)
+fi
+
+# The presigned artifact-upload URLs, when the config0 publisher staged them
+# into the source tree. Absent in the standalone workflow.
+PRESIGNED_PUTS_FILE="$SCRIPT_DIR/presigned_puts.env"
+if [ -f "$PRESIGNED_PUTS_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$PRESIGNED_PUTS_FILE"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -66,7 +76,28 @@ for name in "${LAMBDAS[@]}"; do
             echo "UPLOAD_TO_S3=true but S3_BUCKET is unset" >&2
             exit 2
         fi
-        aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
+        # A presigned PUT URL authorizes as its signer, so the build needs no
+        # IAM grant on the bucket. The URLs arrive in presigned_puts.env inside
+        # the source zip rather than as CodeBuild env overrides, which are
+        # plaintext and readable by anyone who can describe the build.
+        # curl -f + `set -e` fail the build on any non-2xx.
+        # Never echo the URL: it is a bearer credential.
+        url_var="PRESIGNED_PUT_${name^^}"
+        url="${!url_var:-}"
+        if [ -n "$url" ]; then
+            echo "Uploading ${name}.zip via presigned PUT"
+            # --retry-all-errors covers connection resets as well as 429/5xx;
+            # --retry gives exponential backoff. -f still fails the build on a
+            # 4xx that will never succeed (an expired URL), and `set -e` fails
+            # it after the retries are exhausted. The URL is never echoed - it
+            # is a bearer credential - so -S's message is the only output, and
+            # curl does not print the URL on failure.
+            curl -fsS --retry 5 --retry-all-errors \
+                 -X PUT -T "${OUT_DIR}/${name}.zip" "$url" \
+              || { echo "presigned PUT failed for ${name}.zip after retries" >&2; exit 1; }
+        else
+            aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
+        fi
     fi
 done
 

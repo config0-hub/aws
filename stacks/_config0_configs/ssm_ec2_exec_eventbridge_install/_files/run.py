@@ -18,6 +18,37 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from config0_publisher.terraform import TFConstructor
 
 
+# The worker's async done-marker watch is capped at 900s and only ever TIGHTENS
+# (config0-worker internal/consumer/consumer.go:19-22, defaultEngineWatchTimeout
+# / engineWatchTimeout). The watch starts at FIRE, but CodeBuild's own runtime
+# clock starts only after queue + provisioning, so a build allowed to use the
+# full 900s finishes AFTER the watch has given up: the order is requeued while
+# CodeBuild is still legitimately building — a duplicate build, not a timeout.
+#
+# Subtract a provisioning budget, the same 300s the presigner already budgets
+# for queue + provisioning (config0_publisher cloud/aws/codebuild_srcfile_helper.py
+# PRESIGN_HEADROOM_SECONDS). Raising this ceiling means carrying the delegated
+# deadline into the parking contract — an engine-contract change, recorded in
+# engine-run-cycle-contract.md and deliberately not smuggled in here.
+ENGINE_WATCH_CEILING = 900
+PROVISIONING_HEADROOM = 300
+MAX_BUILD_TIMEOUT = ENGINE_WATCH_CEILING - PROVISIONING_HEADROOM
+
+
+def check_build_timeout(build_timeout):
+    """Refuse a build that could outlive the worker's done-marker watch."""
+    if int(build_timeout) > MAX_BUILD_TIMEOUT:
+        raise ValueError(
+            f"build_timeout={build_timeout} exceeds the {MAX_BUILD_TIMEOUT}s maximum: "
+            f"the {ENGINE_WATCH_CEILING}s engine watch ceiling (config0-worker "
+            f"internal/consumer/consumer.go defaultEngineWatchTimeout) minus "
+            f"{PROVISIONING_HEADROOM}s of CodeBuild queue/provisioning headroom. "
+            "The order would be requeued mid-build, producing a duplicate build. "
+            "Lower build_timeout, or change the parking contract to carry the "
+            "delegated deadline."
+        )
+
+
 def _set_codebuild_image(stack):
 
     if stack.runtime == "python3.9":
@@ -118,7 +149,7 @@ def run(stackargs):
 
     stack.parse.add_optional(key="build_timeout",
                              types="int",
-                             default=900)
+                             default=MAX_BUILD_TIMEOUT)
 
     stack.parse.add_optional(key="codebuild_role",
                              default="config0-assume-poweruser")
@@ -181,6 +212,11 @@ def run(stackargs):
         'S3_BUCKET': stack.s3_bucket,
         'KEY_PREFIX': key_prefix,
         'UPLOAD_TO_S3': "true",  # renamed: the submitter strips reserved ^CODEBUILD_* vars
+        # The publisher presigns one PUT URL per name (key <KEY_PREFIX><name>.zip
+        # on S3_BUCKET) and injects them as PRESIGNED_PUT_STARTER/CALLBACK/FALLBACK.
+        # The build uploads with those instead of its own IAM rights, so the
+        # artifacts bucket needs no standing policy for the CodeBuild role.
+        'PRESIGN_PUT_NAMES': "starter,callback,fallback",
         'STATEFUL_ID': stack.stateful_id,
         'EXECUTION_ID': stack.execution_id,
         'TMP_BUCKET': stack.tmp_bucket,
@@ -208,9 +244,19 @@ def run(stackargs):
         'APP_DIR': "var/tmp/lambda"
     }
 
+    check_build_timeout(stack.build_timeout)
+
+    # The order's timeout drives the target-account session the worker mints
+    # (config0-worker internal/consumer/executor.go targetCredsDuration:
+    # max(900, min(order_timeout, engine_timeout, 3600))), and the presigned
+    # artifact-upload URLs die with that session. Ask for the build's own
+    # timeout plus headroom, clamped to the 3600s role-chaining ceiling.
+    order_timeout = min(3600, int(stack.build_timeout) + 600)
+
     inputargs = {
         "name": "ssm_ec2_exec_eventbridge_lambdas",
-        "env_vars": json.dumps(env_vars)
+        "env_vars": json.dumps(env_vars),
+        "timeout": order_timeout
     }
 
     if stack.cloud_tags_hash:
