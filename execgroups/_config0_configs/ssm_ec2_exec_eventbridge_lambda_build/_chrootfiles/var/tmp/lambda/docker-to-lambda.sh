@@ -5,7 +5,7 @@
 #
 #   - STANDALONE (default): docker build each image, then docker create +
 #     docker cp the zip out to build/<name>.zip. No live AWS.
-#   - CODEBUILD_ENV=true: additionally `aws s3 cp` each zip to S3, so the
+#   - UPLOAD_TO_S3=true: additionally `aws s3 cp` each zip to S3, so the
 #     authoring install stack can run this SAME script under CodeBuild.
 #
 # Usage:
@@ -20,7 +20,10 @@ TOOL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PYTHON_VERSION=${PYTHON_VERSION:=3.12}
 export OUT_DIR=${OUT_DIR:=$TOOL_DIR/build}
 export DOCKERFILE_LAMBDA=${DOCKERFILE_LAMBDA:=$SCRIPT_DIR/Dockerfile}
-export CODEBUILD_ENV=${CODEBUILD_ENV:=false}
+# UPLOAD_TO_S3 (renamed from CODEBUILD_ENV): the config0 CodeBuild submitter
+# strips every env var matching ^CODEBUILD (reserved prefix), so the old guard
+# name silently never arrived in the build. Same semantics.
+export UPLOAD_TO_S3=${UPLOAD_TO_S3:=false}
 export S3_BUCKET=${S3_BUCKET:=}
 # KEY_PREFIX lets the config0 install stack scope the uploaded zips under a
 # per-execution prefix (e.g. "<execution_id>/"), so a fresh build -> fresh key
@@ -58,9 +61,9 @@ for name in "${LAMBDAS[@]}"; do
     docker cp "${container}:/lambda.zip" "${OUT_DIR}/${name}.zip"
     docker rm "$container" >/dev/null
 
-    if [ "$CODEBUILD_ENV" = "true" ]; then
+    if [ "$UPLOAD_TO_S3" = "true" ]; then
         if [ -z "$S3_BUCKET" ]; then
-            echo "CODEBUILD_ENV=true but S3_BUCKET is unset" >&2
+            echo "UPLOAD_TO_S3=true but S3_BUCKET is unset" >&2
             exit 2
         fi
         aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"

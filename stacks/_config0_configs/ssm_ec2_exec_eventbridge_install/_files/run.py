@@ -180,7 +180,7 @@ def run(stackargs):
         'PYTHON_VERSION': stack.runtime.split("python")[1],
         'S3_BUCKET': stack.s3_bucket,
         'KEY_PREFIX': key_prefix,
-        'CODEBUILD_ENV': "true",
+        'UPLOAD_TO_S3': "true",  # renamed: the submitter strips reserved ^CODEBUILD_* vars
         'STATEFUL_ID': stack.stateful_id,
         'EXECUTION_ID': stack.execution_id,
         'TMP_BUCKET': stack.tmp_bucket,
