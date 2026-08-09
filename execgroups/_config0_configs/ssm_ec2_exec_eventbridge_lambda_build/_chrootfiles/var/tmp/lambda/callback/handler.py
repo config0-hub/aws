@@ -131,6 +131,10 @@ def process_event(sfn: Any, ssm: Any, table: Any, event: dict, now: int | None =
             status,
         )
         return
+    # Log the incoming terminal status on the COMPLETING path too (it used to be
+    # visible only on the SKIP path, so a completing command's live status never
+    # appeared in its own log line).
+    logger.info("EVENT path=callback commandId=%s status=%s (acquired)", command_id, status)
     _complete(sfn, ssm, table, command_id, instance_id, task_token, "callback")
 
 
