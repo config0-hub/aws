@@ -86,15 +86,25 @@ for name in "${LAMBDAS[@]}"; do
         url="${!url_var:-}"
         if [ -n "$url" ]; then
             echo "Uploading ${name}.zip via presigned PUT"
-            # --retry-all-errors covers connection resets as well as 429/5xx;
-            # --retry gives exponential backoff. -f still fails the build on a
-            # 4xx that will never succeed (an expired URL), and `set -e` fails
-            # it after the retries are exhausted. The URL is never echoed - it
-            # is a bearer credential - so -S's message is the only output, and
-            # curl does not print the URL on failure.
-            curl -fsS --retry 5 --retry-all-errors \
-                 -X PUT -T "${OUT_DIR}/${name}.zip" "$url" \
-              || { echo "presigned PUT failed for ${name}.zip after retries" >&2; exit 1; }
+            # Check the RESPONSE CODE, not just curl's exit status: `-f` does
+            # not fail on a 3xx, so a URL signed for the wrong region got a 307
+            # TemporaryRedirect and the upload "succeeded" while storing
+            # nothing. Only a 2xx means the object landed.
+            #
+            # --retry-all-errors covers connection resets as well as 429/5xx,
+            # with exponential backoff, bounded at 5. The URL is a bearer
+            # credential and is never printed on any path.
+            body="$(mktemp)"
+            code="$(curl -sS --retry 5 --retry-all-errors \
+                         -o "$body" -w '%{http_code}' \
+                         -X PUT -T "${OUT_DIR}/${name}.zip" "$url" || echo 000)"
+            case "$code" in
+                2*) rm -f "$body" ;;
+                *)  echo "presigned PUT for ${name}.zip failed with HTTP ${code}" >&2
+                    cat "$body" >&2
+                    rm -f "$body"
+                    exit 1 ;;
+            esac
         else
             aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
         fi
