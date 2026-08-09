@@ -64,9 +64,16 @@ phases:
 
   post_build:
     commands:
-      - date +%s > done
-      - echo "Uploading done to S3 bucket..."
-      - aws s3 cp done s3://{stack.tmp_bucket}/executions/{stack.execution_id}/done
+      - |
+        if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then
+          XE_STATUS=succeeded
+        else
+          XE_STATUS=failed
+        fi
+        cat > /tmp/xe_result.json <<EOF
+        {{"trigger_id":"$EXECUTION_ID","status":"$XE_STATUS","steps":[{{"command":"codebuild","status":"$XE_STATUS","output":"see CloudWatch log $CODEBUILD_BUILD_ID"}}]}}
+        EOF
+      - aws s3 cp /tmp/xe_result.json $CONFIG0_ENGINE_DONE_ENDPOINT --quiet
 '''
 
     contents = contents_1 + contents_3
