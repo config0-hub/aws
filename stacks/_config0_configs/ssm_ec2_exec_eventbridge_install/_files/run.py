@@ -149,7 +149,10 @@ def run(stackargs):
 
     stack.parse.add_optional(key="build_timeout",
                              types="int",
-                             default=MAX_BUILD_TIMEOUT)
+                             default=600)  # = MAX_BUILD_TIMEOUT (900s watch - 300s provisioning);
+                                           # MUST stay a literal: stack introspection reconstructs
+                                           # declaration lines only, so a module constant here
+                                           # resolves to a mock and breaks the scan
 
     stack.parse.add_optional(key="codebuild_role",
                              default="config0-assume-poweruser")
