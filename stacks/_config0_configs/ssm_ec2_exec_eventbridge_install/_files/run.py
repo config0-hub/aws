@@ -123,7 +123,10 @@ def run(stackargs):
                              default="_random")
 
     stack.parse.add_optional(key="execution_id",
-                             default="null")
+                             default=None)  # None registers the key unset; the legacy "null"
+                                            # string is TRUTHY in the rewrite, so the
+                                            # if-not-execution_id resolution below never fired
+                                            # and the buildspec baked executions/null/done
 
     stack.parse.add_optional(key="share_dir",
                              default="/var/tmp/share")
