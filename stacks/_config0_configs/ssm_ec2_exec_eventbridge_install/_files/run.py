@@ -18,36 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from config0_publisher.terraform import TFConstructor
 
 
-# The worker's async done-marker watch is capped at 900s and only ever TIGHTENS
-# (config0-worker internal/consumer/consumer.go:19-22, defaultEngineWatchTimeout
-# / engineWatchTimeout). The watch starts at FIRE, but CodeBuild's own runtime
-# clock starts only after queue + provisioning, so a build allowed to use the
-# full 900s finishes AFTER the watch has given up: the order is requeued while
-# CodeBuild is still legitimately building — a duplicate build, not a timeout.
-#
-# Subtract a 300s provisioning budget for CodeBuild queue + provisioning.
-# Raising this ceiling means carrying the delegated
-# deadline into the parking contract — an engine-contract change, recorded in
-# engine-run-cycle-contract.md and deliberately not smuggled in here.
-ENGINE_WATCH_CEILING = 900
-PROVISIONING_HEADROOM = 300
-MAX_BUILD_TIMEOUT = ENGINE_WATCH_CEILING - PROVISIONING_HEADROOM
-
-
-def check_build_timeout(build_timeout):
-    """Refuse a build that could outlive the worker's done-marker watch."""
-    if int(build_timeout) > MAX_BUILD_TIMEOUT:
-        raise ValueError(
-            f"build_timeout={build_timeout} exceeds the {MAX_BUILD_TIMEOUT}s maximum: "
-            f"the {ENGINE_WATCH_CEILING}s engine watch ceiling (config0-worker "
-            f"internal/consumer/consumer.go defaultEngineWatchTimeout) minus "
-            f"{PROVISIONING_HEADROOM}s of CodeBuild queue/provisioning headroom. "
-            "The order would be requeued mid-build, producing a duplicate build. "
-            "Lower build_timeout, or change the parking contract to carry the "
-            "delegated deadline."
-        )
-
-
 def _set_codebuild_image(stack):
 
     if stack.runtime == "python3.9":
@@ -101,8 +71,7 @@ def run(stackargs):
 
     stack.parse.add_optional(key="build_timeout",
                              types="int",
-                             default=600)  # = MAX_BUILD_TIMEOUT (900s watch - 300s provisioning);
-                                           # MUST stay a literal: stack introspection reconstructs
+                             default=600)  # MUST stay a literal: stack introspection reconstructs
                                            # declaration lines only, so a module constant here
                                            # resolves to a mock and breaks the scan
 
@@ -196,13 +165,13 @@ def run(stackargs):
         'APP_DIR': "var/tmp/lambda"
     }
 
-    check_build_timeout(stack.build_timeout)
-
-    # The order's timeout drives the target-account session the worker mints
-    # (config0-worker internal/consumer/executor.go targetCredsDuration:
-    # max(900, min(order_timeout, engine_timeout, 3600))). Ask for the build's
-    # own timeout plus headroom, clamped to the 3600s role-chaining ceiling.
-    order_timeout = min(3600, int(stack.build_timeout) + 600)
+    # The order's timeout drives BOTH the worker's done-marker watch deadline
+    # and the target-account session it mints (config0-worker
+    # internal/consumer: engineWatchTimeout / targetCredsDuration - deadline
+    # plus margin, bounded only by the role's max_session_duration, fail loud
+    # past it). Ask for the build's own timeout plus queue/provisioning
+    # headroom; no clamp here.
+    order_timeout = int(stack.build_timeout) + 600
 
     inputargs = {
         "name": "ssm_ec2_exec_eventbridge_lambdas",
