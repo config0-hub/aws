@@ -14,40 +14,20 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-PRESIGNED_PUTS_FILE="$SCRIPT_DIR/presigned_puts.env"
-if [ -f "$PRESIGNED_PUTS_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$PRESIGNED_PUTS_FILE"
-fi
-
 export S3_BUCKET=${S3_BUCKET:=}
 export KEY_PREFIX=${KEY_PREFIX:=}
+
+if [ -z "$S3_BUCKET" ]; then
+    echo "FAILTEST: S3_BUCKET is unset" >&2
+    exit 2
+fi
 
 for name in starter callback fallback; do
     payload="/tmp/${name}.zip"
     echo "FAILTEST: writing corrupt payload for ${name}" > "$payload"
 
-    url_var="PRESIGNED_PUT_$(echo "$name" | tr '[:lower:]' '[:upper:]')"
-    url="${!url_var:-}"
-    if [ -n "$url" ]; then
-        body="/tmp/failtest-put-body-${name}"
-        code=$(curl -sS --retry 5 --retry-all-errors -o "$body" -w '%{http_code}' -X PUT -T "$payload" "$url")
-        case "$code" in
-            2*) echo "FAILTEST: corrupt ${name}.zip uploaded (HTTP ${code})";;
-            *)  echo "FAILTEST: upload of ${name}.zip failed with HTTP ${code}" >&2
-                cat "$body" >&2
-                exit 1;;
-        esac
-    else
-        if [ -z "$S3_BUCKET" ]; then
-            echo "FAILTEST: no presigned URL and no S3_BUCKET" >&2
-            exit 2
-        fi
-        aws s3 cp "$payload" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
-        echo "FAILTEST: corrupt ${name}.zip uploaded via aws s3 cp"
-    fi
+    aws s3 cp "$payload" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
+    echo "FAILTEST: corrupt ${name}.zip uploaded via aws s3 cp"
 done
 
 echo "FAILTEST: all three corrupt zips uploaded — terraform will partially create, then fail on Lambda zip validation."

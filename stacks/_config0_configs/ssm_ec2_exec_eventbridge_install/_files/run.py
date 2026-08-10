@@ -25,9 +25,8 @@ from config0_publisher.terraform import TFConstructor
 # full 900s finishes AFTER the watch has given up: the order is requeued while
 # CodeBuild is still legitimately building — a duplicate build, not a timeout.
 #
-# Subtract a provisioning budget, the same 300s the presigner already budgets
-# for queue + provisioning (config0_publisher cloud/aws/codebuild_srcfile_helper.py
-# PRESIGN_HEADROOM_SECONDS). Raising this ceiling means carrying the delegated
+# Subtract a 300s provisioning budget for CodeBuild queue + provisioning.
+# Raising this ceiling means carrying the delegated
 # deadline into the parking contract — an engine-contract change, recorded in
 # engine-run-cycle-contract.md and deliberately not smuggled in here.
 ENGINE_WATCH_CEILING = 900
@@ -63,53 +62,6 @@ def _set_codebuild_image(stack):
     else:
         stack.set_variable("build_image",
                            'aws/codebuild/standard:7.0')
-
-
-# ref 4353253452354
-def _get_buildspec_hash(stack):
-
-    contents_1 = f'''version: 0.2
-phases:
-  install:
-    on-failure: CONTINUE
-    commands:
-      - echo "Installing system dependencies..."
-      - apt-get update && apt-get install -y zip
-
-  pre_build:
-    on-failure: CONTINUE
-    commands:
-      - aws s3 cp s3://$UPLOAD_BUCKET/{stack.stateful_id}/state/src.{stack.stateful_id}.zip /tmp/{stack.stateful_id}.zip --quiet
-      - mkdir -p {stack.share_dir}
-      - mkdir -p {stack.run_share_dir}
-      - unzip -o /tmp/{stack.stateful_id}.zip -d {stack.run_share_dir}/
-      - rm -rf /tmp/{stack.stateful_id}.zip
-'''
-
-    contents_3 = f'''
-  build:
-    commands:
-      - cd {stack.run_share_dir}/
-      - chmod 755 {stack.script_name}
-      - ./{stack.script_name}
-
-  post_build:
-    commands:
-      - |
-        if [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then
-          XE_STATUS=succeeded
-        else
-          XE_STATUS=failed
-        fi
-        cat > /tmp/xe_result.json <<EOF
-        {{"trigger_id":"$EXECUTION_ID","status":"$XE_STATUS","steps":[{{"command":"codebuild","status":"$XE_STATUS","output":"see CloudWatch log $CODEBUILD_BUILD_ID"}}]}}
-        EOF
-      - aws s3 cp /tmp/xe_result.json $CONFIG0_ENGINE_DONE_ENDPOINT --quiet
-'''
-
-    contents = contents_1 + contents_3
-
-    return stack.serialize(contents, json=False)
 
 
 def run(stackargs):
@@ -215,11 +167,6 @@ def run(stackargs):
         'S3_BUCKET': stack.s3_bucket,
         'KEY_PREFIX': key_prefix,
         'UPLOAD_TO_S3': "true",  # renamed: the submitter strips reserved ^CODEBUILD_* vars
-        # The publisher presigns one PUT URL per name (key <KEY_PREFIX><name>.zip
-        # on S3_BUCKET) and injects them as PRESIGNED_PUT_STARTER/CALLBACK/FALLBACK.
-        # The build uploads with those instead of its own IAM rights, so the
-        # artifacts bucket needs no standing policy for the CodeBuild role.
-        'PRESIGN_PUT_NAMES': "starter,callback,fallback",
         'STATEFUL_ID': stack.stateful_id,
         'EXECUTION_ID': stack.execution_id,
         'TMP_BUCKET': stack.tmp_bucket,
@@ -230,7 +177,9 @@ def run(stackargs):
         'WORKING_DIR': stack.run_share_dir,
         'BUILD_IMAGE': stack.build_image,
         'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
-        'BUILDSPEC_HASH': _get_buildspec_hash(stack),
+        'SCRIPT_NAME': stack.script_name,  # rides the SOPS-sealed env; the engine build
+                                           # runs ${SCRIPT_NAME:-docker-to-lambda.sh}
+                                           # (codebuild_srcfile_helper.py SRCFILE_BUILD_CMDS)
         'BUILD_TIMEOUT': stack.build_timeout,
         'USE_CODEBUILD': "True",
         "AWS_DEFAULT_REGION": stack.aws_region
@@ -251,9 +200,8 @@ def run(stackargs):
 
     # The order's timeout drives the target-account session the worker mints
     # (config0-worker internal/consumer/executor.go targetCredsDuration:
-    # max(900, min(order_timeout, engine_timeout, 3600))), and the presigned
-    # artifact-upload URLs die with that session. Ask for the build's own
-    # timeout plus headroom, clamped to the 3600s role-chaining ceiling.
+    # max(900, min(order_timeout, engine_timeout, 3600))). Ask for the build's
+    # own timeout plus headroom, clamped to the 3600s role-chaining ceiling.
     order_timeout = min(3600, int(stack.build_timeout) + 600)
 
     inputargs = {

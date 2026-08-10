@@ -15,6 +15,36 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+# The worker's async done-marker watch is capped at 900s and only ever TIGHTENS
+# (config0-worker internal/consumer/consumer.go:19-22, defaultEngineWatchTimeout
+# / engineWatchTimeout). The watch starts at FIRE, but CodeBuild's own runtime
+# clock starts only after queue + provisioning, so a build allowed to use the
+# full 900s finishes AFTER the watch has given up: the order is requeued while
+# CodeBuild is still legitimately building — a duplicate build, not a timeout.
+#
+# Subtract a 300s provisioning budget for CodeBuild queue + provisioning.
+# Raising this ceiling means carrying the delegated
+# deadline into the parking contract — an engine-contract change, recorded in
+# engine-run-cycle-contract.md and deliberately not smuggled in here.
+ENGINE_WATCH_CEILING = 900
+PROVISIONING_HEADROOM = 300
+MAX_BUILD_TIMEOUT = ENGINE_WATCH_CEILING - PROVISIONING_HEADROOM
+
+
+def check_build_timeout(build_timeout):
+    """Refuse a build that could outlive the worker's done-marker watch."""
+    if int(build_timeout) > MAX_BUILD_TIMEOUT:
+        raise ValueError(
+            f"build_timeout={build_timeout} exceeds the {MAX_BUILD_TIMEOUT}s maximum: "
+            f"the {ENGINE_WATCH_CEILING}s engine watch ceiling (config0-worker "
+            f"internal/consumer/consumer.go defaultEngineWatchTimeout) minus "
+            f"{PROVISIONING_HEADROOM}s of CodeBuild queue/provisioning headroom. "
+            "The order would be requeued mid-build, producing a duplicate build. "
+            "Lower build_timeout, or change the parking contract to carry the "
+            "delegated deadline."
+        )
+
+
 def _set_codebuild_image(stack):
 
     if stack.runtime == "python3.9":
@@ -29,46 +59,6 @@ def _set_codebuild_image(stack):
     else:
         stack.set_variable("build_image",
                            'aws/codebuild/standard:7.0')
-
-# ref 4353253452354
-def _get_buildspec_hash(stack):
-
-    contents_1 = f'''version: 0.2
-phases:
-  install:
-    on-failure: CONTINUE
-    commands:
-      - echo "Installing system dependencies..."
-      - apt-get update && apt-get install -y zip
-
-  pre_build:
-    on-failure: CONTINUE
-    commands:
-      - aws s3 cp s3://$UPLOAD_BUCKET/{stack.stateful_id}/state/src.{stack.stateful_id}.zip /tmp/{stack.stateful_id}.zip --quiet
-      - mkdir -p {stack.share_dir}
-      - mkdir -p {stack.run_share_dir}
-      - unzip -o /tmp/{stack.stateful_id}.zip -d {stack.run_share_dir}/
-      - rm -rf /tmp/{stack.stateful_id}.zip 
-'''
-
-    contents_3 = f'''
-  build:
-    commands:
-      - cd {stack.run_share_dir}/
-      - chmod 755 {stack.script_name}
-      - ./{stack.script_name}
-      
-  post_build:
-    commands:
-      - date +%s > done
-      - echo "Uploading done to S3 bucket..."
-      - aws s3 cp done s3://{stack.tmp_bucket}/executions/{stack.execution_id}/done
-'''
- 
-    contents = contents_1 + contents_3
-
-    return stack.b64_encode(contents)
-
 
 def run(stackargs):
 
@@ -134,7 +124,10 @@ def run(stackargs):
 
     stack.parse.add_optional(key="build_timeout",
                              types="int",
-                             default=900)
+                             default=600)  # = MAX_BUILD_TIMEOUT (900s watch - 300s provisioning);
+                                           # MUST stay a literal: stack introspection reconstructs
+                                           # declaration lines only, so a module constant here
+                                           # resolves to a mock and breaks the scan
 
     # declare execution groups
     stack.add_execgroup("config0-hub:::aws::py_to_lambda-codebuild",
@@ -185,7 +178,9 @@ def run(stackargs):
         'WORKING_DIR': stack.run_share_dir,
         'BUILD_IMAGE': stack.build_image,
         'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
-        'BUILDSPEC_HASH': _get_buildspec_hash(stack),
+        'SCRIPT_NAME': stack.script_name,  # rides the SOPS-sealed env; the engine build
+                                           # runs ${SCRIPT_NAME:-docker-to-lambda.sh}
+                                           # (codebuild_srcfile_helper.py SRCFILE_BUILD_CMDS)
         'BUILD_TIMEOUT': stack.build_timeout,
         'USE_CODEBUILD': "True",
         "AWS_DEFAULT_REGION": stack.aws_default_region
@@ -213,6 +208,8 @@ def run(stackargs):
         inputargs["cloud_tags_hash"] = stack.cloud_tags_hash
 
     inputargs["use_docker"] = "True"
+
+    check_build_timeout(stack.build_timeout)
 
     stack.buildgroups.insert(**inputargs)
 

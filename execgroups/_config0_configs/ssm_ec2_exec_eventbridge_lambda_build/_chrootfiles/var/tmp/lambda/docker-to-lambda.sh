@@ -5,10 +5,10 @@
 #
 #   - STANDALONE (default): docker build each image, then docker create +
 #     docker cp the zip out to build/<name>.zip. No live AWS.
-#   - UPLOAD_TO_S3=true: additionally upload each zip to S3, so the
-#     authoring install stack can run this SAME script under CodeBuild.
-#     Uses the presigned PUT URL in PRESIGNED_PUT_<NAME> when presigned_puts.env
-#     is present next to this script, else `aws s3 cp` with local creds.
+#   - UPLOAD_TO_S3=true: additionally upload each zip to S3 with `aws s3 cp`,
+#     so the authoring install stack can run this SAME script under CodeBuild
+#     (the build's own credentials, exactly like the original
+#     py_to_lambda-codebuild/docker-to-lambda.sh).
 #
 # Usage:
 #   docker-to-lambda.sh                 # build all three lambdas
@@ -36,14 +36,6 @@ export KEY_PREFIX=${KEY_PREFIX:=}
 LAMBDAS=("$@")
 if [ ${#LAMBDAS[@]} -eq 0 ]; then
     LAMBDAS=(starter callback fallback)
-fi
-
-# The presigned artifact-upload URLs, when the config0 publisher staged them
-# into the source tree. Absent in the standalone workflow.
-PRESIGNED_PUTS_FILE="$SCRIPT_DIR/presigned_puts.env"
-if [ -f "$PRESIGNED_PUTS_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$PRESIGNED_PUTS_FILE"
 fi
 
 mkdir -p "$OUT_DIR"
@@ -76,38 +68,7 @@ for name in "${LAMBDAS[@]}"; do
             echo "UPLOAD_TO_S3=true but S3_BUCKET is unset" >&2
             exit 2
         fi
-        # A presigned PUT URL authorizes as its signer, so the build needs no
-        # IAM grant on the bucket. The URLs arrive in presigned_puts.env inside
-        # the source zip rather than as CodeBuild env overrides, which are
-        # plaintext and readable by anyone who can describe the build.
-        # curl -f + `set -e` fail the build on any non-2xx.
-        # Never echo the URL: it is a bearer credential.
-        url_var="PRESIGNED_PUT_${name^^}"
-        url="${!url_var:-}"
-        if [ -n "$url" ]; then
-            echo "Uploading ${name}.zip via presigned PUT"
-            # Check the RESPONSE CODE, not just curl's exit status: `-f` does
-            # not fail on a 3xx, so a URL signed for the wrong region got a 307
-            # TemporaryRedirect and the upload "succeeded" while storing
-            # nothing. Only a 2xx means the object landed.
-            #
-            # --retry-all-errors covers connection resets as well as 429/5xx,
-            # with exponential backoff, bounded at 5. The URL is a bearer
-            # credential and is never printed on any path.
-            body="$(mktemp)"
-            code="$(curl -sS --retry 5 --retry-all-errors \
-                         -o "$body" -w '%{http_code}' \
-                         -X PUT -T "${OUT_DIR}/${name}.zip" "$url" || echo 000)"
-            case "$code" in
-                2*) rm -f "$body" ;;
-                *)  echo "presigned PUT for ${name}.zip failed with HTTP ${code}" >&2
-                    cat "$body" >&2
-                    rm -f "$body"
-                    exit 1 ;;
-            esac
-        else
-            aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
-        fi
+        aws s3 cp "${OUT_DIR}/${name}.zip" "s3://${S3_BUCKET}/${KEY_PREFIX}${name}.zip"
     fi
 done
 
