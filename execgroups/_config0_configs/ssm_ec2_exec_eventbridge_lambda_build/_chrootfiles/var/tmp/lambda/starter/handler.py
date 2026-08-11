@@ -2,8 +2,9 @@
 
 It holds the ONLY copy of the SFN task token. It fires the SSM command, stores
 the token in DynamoDB keyed by the returned CommandId (so the callback/fallback
-Lambdas can release it later), and returns. It never returns the token to the
-state machine and never travels it to the EC2 box.
+Lambdas can release it later), and writes an executionArn-keyed mirror so the
+state machine can recover the CommandId after a callback timeout. It never
+returns the token to the state machine and never travels it to the EC2 box.
 
 Boundary rule: if SendCommand or PutItem fails, nothing downstream will ever
 release the task — so this handler fails the task loud with the token it holds
@@ -15,7 +16,6 @@ takes the clients as parameters so the unit tests can drive it with fakes.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -62,6 +62,7 @@ def run_starter(
         )
         command_id = sent["Command"]["CommandId"]
 
+        expires_at = now_epoch + timeout_seconds + 3600
         table.put_item(
             Item={
                 "commandId": command_id,
@@ -70,11 +71,20 @@ def run_starter(
                 "instanceId": instance_id,
                 "status": "in_progress",
                 "createdAt": now_epoch,
+                "deadline_epoch": now_epoch + timeout_seconds,
                 # TTL exceeds the SFN task timeout so the fallback never loses
                 # a row it still needs (timeout + 3600 vs the task's
-                # timeout + 600 callback bound).
-                "expiresAt": now_epoch + timeout_seconds + 3600,
+                # timeout + 120 callback bound).
+                "expiresAt": expires_at,
                 "callbackSent": False,
+            }
+        )
+        table.put_item(
+            Item={
+                "commandId": execution_arn,
+                "mappedCommandId": command_id,
+                "instanceId": instance_id,
+                "expiresAt": expires_at,
             }
         )
         logger.info(

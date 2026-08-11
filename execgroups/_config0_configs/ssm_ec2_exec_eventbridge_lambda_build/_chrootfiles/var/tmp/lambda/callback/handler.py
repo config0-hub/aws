@@ -31,11 +31,11 @@ logger.setLevel(logging.INFO)
 # The lock on a token record is a LEASE, not a permanent boolean. An acquirer
 # that dies after acquiring but before completing (a Lambda timeout, or a
 # BotoCoreError whose release path itself failed) would otherwise strand
-# callbackSent=true forever and hang the SFN. LEASE_SECONDS is picked well under
-# the SFN callback timeout (timeout_seconds + 600) and comfortably above one
-# Lambda max duration (lambda_timeout_seconds = 60) so a live invocation can
-# never have its lease stolen mid-flight, but a stranded lease becomes
-# re-acquirable by the next fallback tick.
+# callbackSent=true forever and hang the SFN. LEASE_SECONDS is comfortably
+# above one Lambda max duration (lambda_timeout_seconds = 60), so a live
+# invocation cannot have its lease stolen mid-flight. A stranded lease expires
+# after 120 seconds and is eligible for re-acquisition on the next 15-minute
+# fallback sweep.
 LEASE_SECONDS = 120
 
 

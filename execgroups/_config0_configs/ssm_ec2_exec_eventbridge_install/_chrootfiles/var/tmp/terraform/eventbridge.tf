@@ -4,9 +4,8 @@
 # (a) The normal, fast path: EventBridge delivers the SSM "EC2 Command
 #     Invocation Status-change Notification" for a terminal status straight to
 #     the callback Lambda.
-# (b) The safety net: a rate(1 minute) schedule drives the fallback Lambda,
-#     which scans for still-open records and reconciles any that reached a
-#     terminal SSM status but whose event was missed.
+# (b) The safety net: a rate(15 minutes) schedule drives the fallback Lambda,
+#     which reconciles missed terminal events and closes overdue commands.
 #
 # The invocation-status event's detail carries hyphenated keys
 # (command-id / instance-id / status). The terminal status set below is a
@@ -47,8 +46,8 @@ resource "aws_lambda_permission" "allow_eventbridge_callback" {
 
 resource "aws_cloudwatch_event_rule" "fallback_schedule" {
   name                = "${local.name_prefix}-fallback-schedule"
-  description         = "Drive the fallback reconciler once a minute to close any run whose terminal SSM event was missed."
-  schedule_expression = "rate(1 minute)"
+  description         = "Drive the global fallback reconciler every 15 minutes to close missed terminal events and overdue commands."
+  schedule_expression = "rate(15 minutes)"
 
   tags = local.tags
 }

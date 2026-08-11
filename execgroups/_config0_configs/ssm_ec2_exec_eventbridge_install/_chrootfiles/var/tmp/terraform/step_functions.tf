@@ -4,7 +4,9 @@
 #
 # ApplyDefaults -> Merge -> ComputeCallbackTimeout ->
 # InvokeStarter (lambda:invoke.waitForTaskToken) -> Choice on callback
-# exit_code -> Succeeded | real Failed state.
+# exit_code -> Succeeded | real Failed state. A callback timeout reads the
+# execution-to-command mirror, checks SSM, and either uses the real exit code
+# or cancels a command that is still running.
 #
 # Unlike v1, the state machine does NOT call SSM directly and the task token
 # never travels to the instance. The starter Lambda receives $$.Task.Token in
@@ -22,6 +24,7 @@ resource "aws_sfn_state_machine" "ssm_ec2_exec_eventbridge" {
 
   definition = templatefile("${path.module}/statemachine.asl.json", {
     starter_function_arn = aws_lambda_function.starter.arn
+    token_table_name     = aws_dynamodb_table.tokens.name
   })
 
   logging_configuration {

@@ -21,13 +21,13 @@
     },
     "ComputeCallbackTimeout": {
       "Type": "Pass",
-      "Comment": "Callback bound (ASL Task TimeoutSecondsPath) = requested execution timeout + 600s grace (>= 2x the 60s fallback interval), so a lost event still goes terminal via the fallback instead of hanging indefinitely.",
+      "Comment": "Callback bound (ASL Task TimeoutSecondsPath) = requested execution timeout + 120s grace. On timeout the state machine checks the command before deciding its outcome.",
       "Parameters": {
         "merged": {
           "instance_id.$": "$.merged.instance_id",
           "script.$": "$.merged.script",
           "timeout_seconds.$": "$.merged.timeout_seconds",
-          "callback_timeout_seconds.$": "States.MathAdd($.merged.timeout_seconds, 600)"
+          "callback_timeout_seconds.$": "States.MathAdd($.merged.timeout_seconds, 120)"
         }
       },
       "Next": "InvokeStarter"
@@ -47,7 +47,114 @@
       },
       "TimeoutSecondsPath": "$.merged.callback_timeout_seconds",
       "ResultPath": "$.callback",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "ResultPath": "$.callback_timeout",
+          "Next": "GetCommandMapping"
+        }
+      ],
       "Next": "IsSuccess"
+    },
+    "GetCommandMapping": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:getItem",
+      "Parameters": {
+        "TableName": "${token_table_name}",
+        "Key": {
+          "commandId": {
+            "S.$": "$$.Execution.Id"
+          }
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "ResultPath": "$.command_mapping",
+      "Next": "GetTimedOutCommandInvocation"
+    },
+    "GetTimedOutCommandInvocation": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ssm:getCommandInvocation",
+      "Parameters": {
+        "CommandId.$": "$.command_mapping.Item.mappedCommandId.S",
+        "InstanceId.$": "$.command_mapping.Item.instanceId.S"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "ResultPath": "$.command_invocation",
+      "Next": "ClassifyTimedOutCommand"
+    },
+    "ClassifyTimedOutCommand": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Or": [
+            {
+              "Variable": "$.command_invocation.Status",
+              "StringEquals": "Pending"
+            },
+            {
+              "Variable": "$.command_invocation.Status",
+              "StringEquals": "InProgress"
+            },
+            {
+              "Variable": "$.command_invocation.Status",
+              "StringEquals": "Delayed"
+            },
+            {
+              "Variable": "$.command_invocation.Status",
+              "StringEquals": "Cancelling"
+            }
+          ],
+          "Next": "CancelTimedOutCommand"
+        }
+      ],
+      "Default": "IsTimedOutCommandSuccess"
+    },
+    "IsTimedOutCommandSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.command_invocation.ResponseCode",
+          "NumericEquals": 0,
+          "Next": "Succeeded"
+        }
+      ],
+      "Default": "Failed"
+    },
+    "CancelTimedOutCommand": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ssm:cancelCommand",
+      "Parameters": {
+        "CommandId.$": "$.command_mapping.Item.mappedCommandId.S",
+        "InstanceIds.$": "States.Array($.command_mapping.Item.instanceId.S)"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "TimedOut"
+    },
+    "TimedOut": {
+      "Type": "Fail",
+      "Error": "SsmCommandTimedOut",
+      "Cause": "Remote command was still running after the callback deadline and was cancelled"
     },
     "IsSuccess": {
       "Type": "Choice",

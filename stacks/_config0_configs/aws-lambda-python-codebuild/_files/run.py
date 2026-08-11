@@ -173,7 +173,8 @@ def run(stackargs):
     # The order's timeout drives BOTH the worker's done-marker watch deadline
     # and the target-account session it mints (config0-worker
     # internal/consumer: engineWatchTimeout / targetCredsDuration - deadline
-    # plus margin, bounded only by the role's max_session_duration, fail loud
+    # plus margin, bounded by the 3600s AWS role-chaining cap (the hub mints
+    # chained sessions, so max_session_duration does not lift it), fail loud
     # past it). Ask for the build's own timeout plus queue/provisioning
     # headroom; no clamp here.
     order_timeout = int(stack.build_timeout) + 600

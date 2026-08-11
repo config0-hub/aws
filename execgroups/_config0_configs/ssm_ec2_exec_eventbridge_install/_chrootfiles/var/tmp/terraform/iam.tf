@@ -3,8 +3,8 @@
 # (starter / callback / fallback), and the shared instance role/profile for
 # EC2 targets.
 #
-# The v2 delta from v1: the SFN role no longer holds ssm:SendCommand (it only
-# invokes the starter Lambda), and the instance role no longer holds
+# The v2 delta from v1: the SFN role no longer holds ssm:SendCommand (the
+# starter Lambda sends commands), and the instance role no longer holds
 # states:SendTask* (the token stays server-side — the whole point of v2). The
 # ssm:SendCommand scope moves onto the starter role, kept exactly two ways
 # (AWS ANDs the two resource-type statements a single SendCommand touches):
@@ -54,6 +54,21 @@ resource "aws_iam_role_policy" "sfn_invoke_starter" {
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
         Resource = aws_lambda_function.starter.arn
+      },
+      {
+        Sid      = "GetCommandMapping"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem"]
+        Resource = aws_dynamodb_table.tokens.arn
+      },
+      {
+        Sid    = "InspectOrCancelTimedOutCommand"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetCommandInvocation",
+          "ssm:CancelCommand",
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -216,9 +231,12 @@ resource "aws_iam_role_policy" "fallback" {
         Resource = aws_dynamodb_table.tokens.arn
       },
       {
-        Sid      = "ReadCommandResult"
-        Effect   = "Allow"
-        Action   = ["ssm:GetCommandInvocation"]
+        Sid    = "ReadOrCancelCommand"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetCommandInvocation",
+          "ssm:CancelCommand",
+        ]
         Resource = "*"
       },
       {

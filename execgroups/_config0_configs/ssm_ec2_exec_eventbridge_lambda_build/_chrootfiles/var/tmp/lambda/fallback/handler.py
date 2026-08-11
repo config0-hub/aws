@@ -1,9 +1,9 @@
 """Fallback Lambda — the polling reconciliation safety net.
 
-Driven by a rate(1 minute) EventBridge schedule. It scans for still-open token
-records (callbackSent = false) and, for any whose SSM command has reached a
-terminal status, completes them exactly as the callback would. This closes any
-run whose terminal EventBridge event was missed.
+Driven by a rate(15 minutes) EventBridge schedule. It scans for still-open
+token records (callbackSent = false). Commands that reached a terminal status
+complete exactly as the callback would; commands past deadline_epoch fail as
+timed out and are cancelled.
 
 The _acquire / _complete / _release_lock helpers are intentionally duplicated
 verbatim from the callback Lambda — no shared layer (each handler is a
@@ -35,7 +35,8 @@ logger.setLevel(logging.INFO)
 RUNNING_STATUSES = {"Pending", "InProgress", "Delayed", "Cancelling"}
 
 # See the callback handler: the lock is a re-acquirable LEASE, not a permanent
-# boolean, so a stranded acquirer's lease is retaken by a later fallback tick.
+# boolean. It outlives one 60-second Lambda invocation, expires after 120
+# seconds, and is eligible for re-acquisition on the next 15-minute sweep.
 LEASE_SECONDS = 120
 
 
@@ -118,24 +119,59 @@ def _complete(
 
 
 def _reconcile_one(sfn: Any, ssm: Any, table: Any, item: dict, now: int | None = None) -> None:
+    if now is None:
+        now = int(time.time())
     command_id = item["commandId"]
     instance_id = item["instanceId"]
     try:
         inv = ssm.get_command_invocation(CommandId=command_id, InstanceId=instance_id)
     except ClientError as exc:
-        if exc.response["Error"]["Code"] == "InvocationDoesNotExist":
-            # The command hasn't produced an invocation on this instance yet —
-            # leave it for a later pass.
+        if exc.response["Error"]["Code"] != "InvocationDoesNotExist":
+            raise
+        # A command with no invocation is not terminal. Before its deadline it
+        # remains eligible for a later pass; after its deadline it follows the
+        # same timeout closure as an explicitly running command.
+        inv = None
+    if inv is not None:
+        status = inv["Status"]
+        if status not in RUNNING_STATUSES:
+            task_token = _acquire(table, command_id, now)
+            if task_token is None:
+                logger.info("SKIP path=fallback commandId=%s (already completed)", command_id)
+                return
+            _complete(sfn, ssm, table, command_id, instance_id, task_token, "fallback")
             return
-        raise
-    status = inv["Status"]
-    if status in RUNNING_STATUSES:
+    deadline_epoch = item["deadline_epoch"]
+    if now < deadline_epoch:
         return
     task_token = _acquire(table, command_id, now)
     if task_token is None:
-        logger.info("SKIP path=fallback commandId=%s (already completed)", command_id)
+        logger.info("SKIP path=overdue commandId=%s (already completed)", command_id)
         return
-    _complete(sfn, ssm, table, command_id, instance_id, task_token, "fallback")
+    logger.info(
+        "SENDTASK path=overdue commandId=%s deadline_epoch=%s",
+        command_id,
+        deadline_epoch,
+    )
+    try:
+        sfn.send_task_failure(
+            taskToken=task_token,
+            error="SsmCommandTimedOut",
+            cause=f"SSM command exceeded deadline_epoch={deadline_epoch}",
+        )
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] not in ("TaskDoesNotExist", "TaskTimedOut"):
+            _release_lock(table, command_id)
+            raise
+    except BotoCoreError:
+        _release_lock(table, command_id)
+        raise
+    try:
+        ssm.cancel_command(CommandId=command_id, InstanceIds=[instance_id])
+    except (ClientError, BotoCoreError):
+        _release_lock(table, command_id)
+        raise
+    _mark_done(table, command_id)
 
 
 def reconcile(sfn: Any, ssm: Any, table: Any, now: int | None = None) -> None:
@@ -152,7 +188,8 @@ def reconcile(sfn: Any, ssm: Any, table: Any, now: int | None = None) -> None:
     # re-acquired, defeating the fallback.
     scan_kwargs = {
         "FilterExpression": (
-            "callbackSent = :f OR attribute_not_exists(callbackSent) OR lockedAt < :cutoff"
+            "attribute_exists(taskToken) AND "
+            "(callbackSent = :f OR attribute_not_exists(callbackSent) OR lockedAt < :cutoff)"
         ),
         "ExpressionAttributeValues": {":f": False, ":cutoff": cutoff},
     }
