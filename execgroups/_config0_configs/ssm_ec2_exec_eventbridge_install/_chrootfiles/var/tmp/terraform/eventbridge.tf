@@ -31,14 +31,21 @@ resource "aws_cloudwatch_event_rule" "ssm_invocation_terminal" {
 
   provisioner "local-exec" {
     when        = destroy
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-      target_ids=$(aws events list-targets-by-rule --rule '${self.name}' --query 'Targets[].Id' --output text)
-      if [ -n "$target_ids" ] && [ "$target_ids" != "None" ]; then
-        aws events remove-targets --rule '${self.name}' --ids $target_ids
-      fi
-    EOT
+    interpreter = ["python3", "-c"]
+    command     = <<-PY
+      import boto3
+
+      rule_name = ${jsonencode(self.name)}
+      events = boto3.client("events")
+      targets = events.list_targets_by_rule(Rule=rule_name)["Targets"]
+      target_ids = [target["Id"] for target in targets]
+      if target_ids:
+          result = events.remove_targets(Rule=rule_name, Ids=target_ids)
+          if result["FailedEntryCount"] != 0:
+              raise RuntimeError(
+                  f"failed to remove EventBridge targets: {result['FailedEntries']}"
+              )
+    PY
   }
 }
 
@@ -65,14 +72,21 @@ resource "aws_cloudwatch_event_rule" "fallback_schedule" {
 
   provisioner "local-exec" {
     when        = destroy
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-      target_ids=$(aws events list-targets-by-rule --rule '${self.name}' --query 'Targets[].Id' --output text)
-      if [ -n "$target_ids" ] && [ "$target_ids" != "None" ]; then
-        aws events remove-targets --rule '${self.name}' --ids $target_ids
-      fi
-    EOT
+    interpreter = ["python3", "-c"]
+    command     = <<-PY
+      import boto3
+
+      rule_name = ${jsonencode(self.name)}
+      events = boto3.client("events")
+      targets = events.list_targets_by_rule(Rule=rule_name)["Targets"]
+      target_ids = [target["Id"] for target in targets]
+      if target_ids:
+          result = events.remove_targets(Rule=rule_name, Ids=target_ids)
+          if result["FailedEntryCount"] != 0:
+              raise RuntimeError(
+                  f"failed to remove EventBridge targets: {result['FailedEntries']}"
+              )
+    PY
   }
 }
 
