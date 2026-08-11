@@ -16,7 +16,7 @@ This stack creates an AWS EC2 instance with an optional EBS volume attachment. I
 
 | Name | Description | Default |
 |------|-------------|---------|
-| ami_filter | AMI filter criteria | ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server-* |
+| ami_filter | AMI filter criteria | ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* |
 | ami_owner | AMI owner ID | 099720109477 |
 | instance_type | EC2 instance type | t3.micro |
 | associate_public_ip_address | Associate public IP address with instance | true |

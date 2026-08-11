@@ -46,7 +46,7 @@ module "ec2_instance" {
 | disktype | EBS volume type for the root block device | string | "gp2" | no |
 | disksize | Size of the root EBS volume in GB | number | 20 | no |
 | user_data | Base64 encoded user data to provide when launching the instance | string | null | no |
-| ami_filter | Filter pattern to locate specific AMI | string | "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*" | no |
+| ami_filter | Filter pattern to locate specific AMI | string | "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*" | no |
 | ami_owner | AWS account ID of the AMI owner (Canonical for Ubuntu) | string | "099720109477" | no |
 | iam_instance_profile | IAM instance profile to attach to the instance | string | null | no |
 | subnet_id | VPC Subnet ID to launch the instance in | string | null | no |

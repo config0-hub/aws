@@ -110,9 +110,9 @@ def run(stackargs):
     else:
         policy = _get_default_policy(stack)
 
-    stack.set_variable("policy", 
-                       stack.b64_encode(policy), 
-                       tags="tfvar", 
+    stack.set_variable("policy",
+                       stack.b64_encode(policy),
+                       tags="tfvar",
                        types="str")
 
     stack.set_variable("timeout", 600)

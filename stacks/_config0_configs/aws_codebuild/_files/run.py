@@ -18,7 +18,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from config0_publisher.terraform import TFConstructor
 
 
-class _BuildSpecs(object):
+class _BuildSpecs:
 
     def __init__(self, stack):
         self.classname = '_BuildSpecs'
@@ -80,7 +80,7 @@ env:
         contents = '''
   pre_build:
     on-failure: CONTINUE
-    commands:   
+    commands:
 '''
         return contents
 
@@ -114,7 +114,7 @@ env:
     def _default_build_headers():
         contents = '''
   build:
-    commands:   
+    commands:
 '''
         return contents
 

@@ -54,7 +54,7 @@ variable "user_data" {
 variable "ami_filter" {
   description = "Filter pattern to locate specific AMI"
   type        = string
-  default     = "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"
+  default     = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"
 }
 
 variable "ami_owner" {

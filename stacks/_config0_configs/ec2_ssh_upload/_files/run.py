@@ -25,7 +25,7 @@ def _get_ssh_public_key(stack):
         "resource_type": "ssh_key_pair",
         "name": stack.key_name
     }
-    
+
     try:
         results = stack.get_resource(decrypt=True, **_lookup)[0]
     except:
@@ -33,7 +33,7 @@ def _get_ssh_public_key(stack):
 
     if results:
         stack.logger.debug(f"found public key {_lookup}")
-        
+
     if not results:
         _lookup = {
             "must_be_one": True,
@@ -72,7 +72,7 @@ def _get_ssh_public_key(stack):
         raise Exception("could not retrieve public key")
 
     public_key_hash = results.get("public_key_hash")
-    
+
     if public_key_hash:
         return public_key_hash
 

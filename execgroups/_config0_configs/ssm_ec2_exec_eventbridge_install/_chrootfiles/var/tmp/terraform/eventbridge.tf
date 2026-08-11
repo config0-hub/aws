@@ -28,6 +28,18 @@ resource "aws_cloudwatch_event_rule" "ssm_invocation_terminal" {
   })
 
   tags = local.tags
+
+  provisioner "local-exec" {
+    when        = destroy
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      target_ids=$(aws events list-targets-by-rule --rule '${self.name}' --query 'Targets[].Id' --output text)
+      if [ -n "$target_ids" ] && [ "$target_ids" != "None" ]; then
+        aws events remove-targets --rule '${self.name}' --ids $target_ids
+      fi
+    EOT
+  }
 }
 
 resource "aws_cloudwatch_event_target" "callback" {
@@ -50,6 +62,18 @@ resource "aws_cloudwatch_event_rule" "fallback_schedule" {
   schedule_expression = "rate(15 minutes)"
 
   tags = local.tags
+
+  provisioner "local-exec" {
+    when        = destroy
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      target_ids=$(aws events list-targets-by-rule --rule '${self.name}' --query 'Targets[].Id' --output text)
+      if [ -n "$target_ids" ] && [ "$target_ids" != "None" ]; then
+        aws events remove-targets --rule '${self.name}' --ids $target_ids
+      fi
+    EOT
+  }
 }
 
 resource "aws_cloudwatch_event_target" "fallback" {

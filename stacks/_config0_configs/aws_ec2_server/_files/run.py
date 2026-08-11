@@ -37,7 +37,7 @@ def run(stackargs):
                              types="str")
 
     stack.parse.add_optional(key="ami_filter",
-                             default='ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*',
+                             default='ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*',
                              tags="tfvar",
                              types="str")
 
