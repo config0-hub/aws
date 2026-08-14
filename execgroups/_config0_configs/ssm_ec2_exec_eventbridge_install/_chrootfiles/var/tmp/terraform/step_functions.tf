@@ -28,8 +28,16 @@ resource "aws_sfn_state_machine" "ssm_ec2_exec_eventbridge" {
   })
 
   logging_configuration {
-    log_destination        = "${aws_cloudwatch_log_group.sfn.arn}:*"
-    include_execution_data = true
+    log_destination = "${aws_cloudwatch_log_group.sfn.arn}:*"
+    # include_execution_data stays false: StartExecution input carries the
+    # bootstrap script with two still-valid presigned bearer URLs (the
+    # payload GET and the first-writer marker PUT). With execution-data
+    # logging on, those URLs land verbatim in Step Functions execution
+    # history and CloudWatch, readable by any principal with
+    # states:GetExecutionHistory/DescribeExecution or log access for as long
+    # as they remain valid - a principal that reads one can forge a
+    # first-writer marker PUT and win the race (code review F-02).
+    include_execution_data = false
     level                  = "ALL"
   }
 
