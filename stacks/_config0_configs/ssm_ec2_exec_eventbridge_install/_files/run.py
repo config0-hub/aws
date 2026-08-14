@@ -213,11 +213,23 @@ def run(stackargs):
         "s3_key_fallback": f"{key_prefix}fallback.zip"
     })
 
+    # Discovery contract: the host-order seam resolves the install record and
+    # reads these promoted keys — never an order-payload override. Promote
+    # them onto the queryable resource surface.
+    tf.include(keys=["state_machine_arn",
+                     "bucket_name",
+                     "payload_key_layout",
+                     "instance_profile_name",
+                     "managed_tag_key",
+                     "managed_tag_value",
+                     "kms_key_arn"])
+
     # resource output to show on saas ui
     tf.output(keys=["state_machine_arn",
                     "bucket_name",
                     "instance_profile_name",
-                    "dynamodb_table_name"])
+                    "dynamodb_table_name",
+                    "kms_key_arn"])
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,

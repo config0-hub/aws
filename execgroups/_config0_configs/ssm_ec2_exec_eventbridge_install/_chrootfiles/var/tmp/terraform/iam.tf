@@ -330,6 +330,29 @@ resource "aws_iam_role_policy" "instance_bucket_access" {
   })
 }
 
+resource "aws_iam_role_policy" "instance_sops_decrypt" {
+  name = "sops-payload-decrypt"
+  role = aws_iam_role.instance.id
+
+  # The SOPS-sealed host-configuration payload is read from the existing
+  # payload prefix (ReadPayloadPrefix above) and decrypted on-box with the one
+  # install-owned KMS key — decrypt on that key ARN only. The DoneResult
+  # marker is written back through a pre-signed PUT URL minted by the firing
+  # worker; presigned auth rides the signer's credentials, so the instance
+  # role needs no marker-bucket grant.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "SopsPayloadDecrypt"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = aws_kms_key.sops.arn
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role_policy" "instance_ssm_output_logs" {
   name = "ssm-output-log-delivery"
   role = aws_iam_role.instance.id

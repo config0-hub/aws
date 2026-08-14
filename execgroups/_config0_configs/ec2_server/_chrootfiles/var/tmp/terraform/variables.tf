@@ -81,6 +81,18 @@ variable "security_group_ids" {
   default     = null
 }
 
+variable "managed_tag_key" {
+  description = "Tag key that makes this instance targetable by the SSM executor's SendCommand condition (the default orchestrated_by=config0 tag does not satisfy it). Set together with managed_tag_value or not at all."
+  type        = string
+  default     = null
+}
+
+variable "managed_tag_value" {
+  description = "Tag value paired with managed_tag_key."
+  type        = string
+  default     = null
+}
+
 variable "cloud_tags" {
   description = "Additional tags as a map to apply to all resources"
   type        = map(string)

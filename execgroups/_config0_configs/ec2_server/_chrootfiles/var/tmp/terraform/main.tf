@@ -19,6 +19,9 @@ resource "aws_instance" "default" {
 
   tags = merge(
     var.cloud_tags,
+    # Executor managed tag — the SSM starter's SendCommand instance condition
+    # matches on exactly this key/value; applied only when both are supplied.
+    var.managed_tag_key != null && var.managed_tag_value != null ? { (var.managed_tag_key) = var.managed_tag_value } : {},
     {
       Name    = var.hostname
       Product = "ec2"

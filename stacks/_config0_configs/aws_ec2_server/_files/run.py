@@ -78,6 +78,21 @@ def run(stackargs):
                              tags="tfvar",
                              types="str")
 
+    # SSM executor targeting: the executor install stack promotes an instance
+    # profile name and a canonical managed tag; a server consuming them
+    # becomes SendCommand-targetable. The default orchestrated_by=config0 tag
+    # does NOT satisfy the executor's SendCommand tag condition.
+    stack.parse.add_optional(key="instance_profile_name",
+                             types="str")
+
+    stack.parse.add_optional(key="managed_tag_key",
+                             tags="tfvar,db",
+                             types="str")
+
+    stack.parse.add_optional(key="managed_tag_value",
+                             tags="tfvar,db",
+                             types="str")
+
     stack.parse.add_optional(key="security_group_ids",  # comma delimited
                              types="str")
 
@@ -151,6 +166,22 @@ def run(stackargs):
                            tags="tfvar,db",
                            types="str")
 
+    # executor instance profile: instance_profile_name is the executor-facing
+    # input; it feeds the same terraform var as iam_instance_profile.
+    # Supplying both is ambiguous - fail loud.
+    if stack.get_attr("instance_profile_name") and stack.get_attr("iam_instance_profile"):
+        raise ValueError("supply instance_profile_name or iam_instance_profile, not both")
+
+    if stack.get_attr("instance_profile_name"):
+        stack.set_variable("iam_instance_profile",
+                           stack.instance_profile_name,
+                           tags="tfvar",
+                           types="str")
+
+    # the managed tag only targets an instance when key AND value are applied
+    if bool(stack.get_attr("managed_tag_key")) != bool(stack.get_attr("managed_tag_value")):
+        raise ValueError("managed_tag_key and managed_tag_value must be supplied together")
+
     stack.set_variable("timeout", 600)
 
     # use the terraform constructor (helper)
@@ -164,6 +195,16 @@ def run(stackargs):
         "aws_default_region": stack.aws_default_region,
         "hostname": stack.hostname
     })
+
+    # SSM target identity facts on the server record: the host-order seam
+    # resolves ONE server row and validates account/region/instance-id/
+    # profile/managed tag from it - never an untrusted payload id.
+    tf.include(keys=["account_id",
+                     "region",
+                     "instance_id",
+                     "instance_profile",
+                     "managed_tag_key",
+                     "managed_tag_value"])
 
     # resource output to show on saas ui
     tf.output(keys=["id", "private_ip", "public_ip"])

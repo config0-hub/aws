@@ -1,3 +1,8 @@
+# Account identity for the server record's SSM target facts.
+data "aws_caller_identity" "current" {}
+
+data "aws_region" "current" {}
+
 # AWS AMI data source
 # Retrieves the most recent AMI based on filters
 data "aws_ami" "default" {
