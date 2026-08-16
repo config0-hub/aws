@@ -1,11 +1,12 @@
 # ---------------------------------------------------------------------------
 # One target-account KMS key sealing the SOPS host-configuration payload.
 #
-# Resolve-or-create: this install stack is the single owner of the SOPS seal
-# key in a target account. Terraform creates it once under a fixed alias; every
-# later apply of the same install resolves it from state. A pre-existing alias
-# created outside this stack fails the apply loud instead of silently adopting
-# a key with an unknown policy.
+# Resolve-or-create: this install is the single owner of its own per-install
+# SOPS seal key (alias scoped by install_name) in a target account. Terraform
+# creates it once under a fixed alias; every later apply of the same install
+# resolves it from state. A pre-existing alias created outside this stack
+# fails the apply loud instead of silently adopting a key with an unknown
+# policy.
 #
 # The target-bound handler encrypts secrets.enc.json against this key ARN
 # (promoted on the install resource record); the instance role gets decrypt on

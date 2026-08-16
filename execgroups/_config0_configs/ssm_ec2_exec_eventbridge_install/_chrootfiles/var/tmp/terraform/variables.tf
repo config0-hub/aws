@@ -4,6 +4,29 @@ variable "aws_region" {
   default     = "ap-northeast-1"
 }
 
+# ---------------------------------------------------------------------------
+# Name discriminator. This install stack is NOT an account-wide singleton:
+# every named resource it creates (DynamoDB table, buckets, log groups, SFN,
+# Lambdas, IAM roles, instance profile, KMS alias) is scoped by this value so
+# more than one install can coexist in one AWS account. Defaults to "main" so
+# a single install stays zero-config; each additional install in the same
+# account must pass a distinct install_name. Two installs sharing one
+# collide on create.
+# ---------------------------------------------------------------------------
+
+variable "install_name" {
+  description = "Unique-per-install discriminator folded into every resource name this module creates."
+  type        = string
+  default     = "main"
+
+  validation {
+    # Bounded by the tightest consumer: the "-ssm-invocation-terminal"
+    # EventBridge rule name (AWS 64-char limit) leaves at most 15 chars here.
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{0,14}$", var.install_name))
+    error_message = "install_name must be 1-15 lowercase alphanumeric characters or hyphens, starting with a letter or digit."
+  }
+}
+
 variable "managed_tag_key" {
   description = "Tag key used to scope SSM SendCommand to instances this module is allowed to target."
   type        = string

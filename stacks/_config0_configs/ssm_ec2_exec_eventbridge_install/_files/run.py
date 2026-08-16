@@ -56,6 +56,17 @@ def run(stackargs):
                              tags="tfvar",
                              types="str")
 
+    # This install stack is NOT an account-wide singleton: install_name
+    # discriminates every AWS resource name it creates (and the resource
+    # record's identity below) so more than one install can coexist in one
+    # account. Optional, default "main": a single install stays zero-config;
+    # a second install in the same account passes a distinct install_name.
+    # Two installs sharing one collide on create.
+    stack.parse.add_optional(key="install_name",
+                             default="main",
+                             tags="tfvar",
+                             types="str")
+
     # codebuild framing (aws-lambda-python-codebuild optionals)
     stack.parse.add_optional(key="runtime",
                              default="python3.12",
@@ -150,6 +161,11 @@ def run(stackargs):
                                            # runs ${SCRIPT_NAME:-docker-to-lambda.sh}
                                            # (codebuild_srcfile_helper.py SRCFILE_BUILD_CMDS)
         'BUILD_TIMEOUT': stack.build_timeout,
+        'DIRECT': "True",  # direct-mode engine delivery (execution_mode="direct"):
+                           # CodeBuild standard:7.0 privileged + S3 engine.zip,
+                           # required for the docker build inside the container
+                           # (codebuild_srcfile_helper.py reads this via the
+                           # CODEBUILD_PARAMS_HASH channel)
         'USE_CODEBUILD': "True",
         "AWS_DEFAULT_REGION": stack.aws_region
     }
@@ -202,7 +218,7 @@ def run(stackargs):
     tf = TFConstructor(stack=stack,
                        execgroup_name=stack.tf_execgroup.name,
                        provider="aws",
-                       resource_name="ssm_ec2_exec_eventbridge",
+                       resource_name=f"ssm_ec2_exec_eventbridge-{stack.install_name}",
                        resource_type="ssm_ec2_exec_eventbridge_install")
 
     tf.include(values={
@@ -210,7 +226,8 @@ def run(stackargs):
         "s3_bucket": stack.s3_bucket,
         "s3_key_starter": f"{key_prefix}starter.zip",
         "s3_key_callback": f"{key_prefix}callback.zip",
-        "s3_key_fallback": f"{key_prefix}fallback.zip"
+        "s3_key_fallback": f"{key_prefix}fallback.zip",
+        "install_name": stack.install_name
     })
 
     # Discovery contract: the host-order seam resolves the install record and
