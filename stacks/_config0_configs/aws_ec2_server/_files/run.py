@@ -105,7 +105,7 @@ def run(stackargs):
 
     stack.parse.add_optional(key="aws_default_region",
                              default="eu-west-1",
-                             tags="tfvar,resource,db,tf_exec_env",
+                             tags="tfvar,resource,db,tf_exec_env,ebs",
                              types="str")
 
     # extra disk
