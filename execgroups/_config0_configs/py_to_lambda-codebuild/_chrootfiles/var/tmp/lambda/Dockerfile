@@ -1,8 +1,7 @@
 ARG python_release=3.11
 ARG python_version=3.11
 
-# ref nexus update
-FROM nexus:8083/docker/library/python:${python_version} AS build
+FROM python:${python_version} AS build
 
 ARG python_release=3.11
 ARG pkg_name=PleaseSetPkgName
@@ -56,7 +55,7 @@ RUN apt-get install -y --no-install-recommends htop
 #RUN mv $SHARE_DIR/venv/lib/python${PYTHON_RELEASE}/site-packages $SHARE_DIR/app
 #
 ## create the upload container
-#FROM nexus:8083/docker/library/alpine:3.18.4 # ref nexus update
+#FROM alpine:3.18.4
 #
 #ARG python_release=3.11
 #ARG pkg_name=PleaseSetPkgName

@@ -2,10 +2,9 @@
 # Build Stage: Prepares the Python application and dependencies
 ############################################################
 
-# Use the official Python image from AWS ECR as the base image
+# Use the official Python image from Docker Hub as the base image
 ARG lang_version=3.9
-# ref nexus update
-FROM nexus:8083/docker/library/python:${lang_version} as build
+FROM python:${lang_version} as build
 
 # Set the Python version as an environment variable
 ARG lang_version=3.9
@@ -40,8 +39,7 @@ RUN mv /var/tmp/venv/lib/python${LANG_VERSION}/site-packages /var/tmp/app
 ############################################################
 
 # Use a lightweight Alpine Linux image as the base image
-# ref nexus update
-FROM nexus:8083/docker/library/alpine:3.18.4
+FROM alpine:3.18.4
 
 # Install Python and pip
 RUN apk add --no-cache python3 py3-pip && \
