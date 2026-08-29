@@ -17,7 +17,8 @@
 
 ARG python_version=3.12
 
-FROM public.ecr.aws/docker/library/python:${python_version} AS build
+# ref nexus update
+FROM nexus:8083/docker/library/python:${python_version} AS build
 
 ARG pkg_name=PleaseSetPkgName
 ARG src_dir=PleaseSetSrcDir
@@ -46,7 +47,8 @@ RUN cd $BUILD_DIR/package && \
 
 # Export stage: a minimal image whose only job is to hold the zip at a fixed
 # path for `docker cp` (standalone) — the codebuild flow also cp's from here.
-FROM public.ecr.aws/docker/library/alpine:3.20 AS export
+# ref nexus update
+FROM nexus:8083/docker/library/alpine:3.20 AS export
 
 ARG pkg_name=PleaseSetPkgName
 ARG build_dir=/build
