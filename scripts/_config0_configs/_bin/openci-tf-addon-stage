@@ -1,0 +1,512 @@
+#!/usr/bin/env python
+"""
+openci-tf config0-addon stage runner.
+
+One script, one STAGE env var per execgroup order of the openci_tf_install
+stack. The stack (run.py) declares the stages as scheduled jobs; each job's
+execgroup order runs this script inside the tenant engine with the stage
+selected by STAGE and the lifecycle side selected by METHOD (create|destroy).
+Everything that touches the tenant account or the user's repository runs here,
+through the orders queue, using openci-tf's own installer scripts (decision 22)
+from a pinned checkout of the openci-tf repository.
+
+Stages (create):
+    ecr       install/config0_addon.py --stage ecr   (targeted module.ecr apply)
+    deploy    install/config0_addon.py --stage deploy, then the infra/deploy
+              tofu outputs are recorded to SSM /openci-tf/install/<project>/
+              config0_outputs for the register and record stages
+    token     the GitHub clone token (encrypted run environment, never order
+              params) is written to SSM /openci-tf/clone-token/<name> as a
+              SecureString
+    register  install/register_repo.py (empty-repo initialization, webhook
+              secret, repo plus hub-alias settings, webhook create/reconcile;
+              hook_id recorded in SSM)
+    record    the addon resource record (deploy outputs + registration values
+              + attempt_id) is written through the resource JSON channel
+
+Stages (destroy) - the stack's on_delete graph removes each matching create
+stage's resources, deletes the token as the last external side effect, then
+deletes the typed record:
+    register  close recorded write-back/mutation PRs, delete the webhook and
+              registration settings; a provably unregistered partial install
+              can continue without a token
+    deploy    destroy non-ECR deploy modules, then foundation
+    ecr       destroy module.ecr after the image-copy stage deleted its tag
+    token     delete the SSM clone-token parameter
+
+The GitHub clone token is read ONLY from the GITOPS_TOKEN encrypted run
+environment or tenant SSM. It is never printed, logged, or written to an order
+or resource surface.
+
+Copyright 2026 Gary Leong <gary@config0.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+
+import boto3
+import requests
+
+from config0_publisher.loggerly import Config0Logger
+from config0_publisher.resource.manage import ResourceCmdHelper
+from config0_publisher.resource.manage_output import insert_resource_id
+from config0_publisher.tmpdir import OnDiskTmpDir
+
+STAGES = ("ecr", "deploy", "token", "register", "record")
+
+
+class OpenciTfAddonStage(ResourceCmdHelper):
+    """Run one openci-tf config0-addon install/removal stage."""
+
+    def __init__(self):
+        super().__init__()
+        self.classname = "OpenciTfAddonStage"
+        self.logger = Config0Logger(self.classname, logcategory="cloudprovider")
+
+        self.stage = os.environ["STAGE"]
+        if self.stage not in STAGES:
+            raise ValueError(f'STAGE "{self.stage}" not supported; expected one of {STAGES}')
+        self.method = os.environ.get("METHOD", "create")
+        if self.method not in ("create", "destroy"):
+            raise ValueError(f'METHOD "{self.method}" not supported; expected create|destroy')
+
+        self.region = os.environ["OPENCI_TF_REGION"]
+        self.project_name = os.environ.get("OPENCI_TF_PROJECT", "openci-tf")
+        self.install_ssm_prefix = f"/openci-tf/install/{self.project_name}"
+        self._checkout = None
+
+        self.ssm = boto3.client("ssm", region_name=self.region)
+        self.dynamodb = boto3.client("dynamodb", region_name=self.region)
+
+    # -- openci-tf checkout ------------------------------------------------
+
+    def checkout(self):
+        """Clone the pinned openci-tf repository once; return its directory."""
+        if self._checkout:
+            return self._checkout
+        repo_url = os.environ["OPENCI_TF_REPO_URL"]
+        git_ref = os.environ["OPENCI_TF_GIT_REF"]
+        tempdir = OnDiskTmpDir()
+        dest = os.path.join(tempdir.get(), "openci-tf")
+        subprocess.run(["git", "clone", repo_url, dest], check=True)
+        subprocess.run(["git", "-C", dest, "checkout", git_ref], check=True)
+        self._checkout = dest
+        return dest
+
+    def _installer(self, checkout):
+        """Import openci-tf's own installer module from the checkout.
+
+        Reusing install/config0_addon.py's prepare_root/deploy_tfvars keeps the
+        backend, tfvars, and init flags identical between apply and destroy —
+        no second copy of the installer's knowledge lives here.
+        """
+        sys.path.insert(0, os.path.join(checkout, "install"))
+        import config0_addon  # noqa: PLC0415 — importable only after the clone
+        return config0_addon
+
+    def _addon_args(self, config0_addon):
+        """The argparse namespace install/config0_addon.py's helpers consume."""
+        argv = [
+            "--stage", "deploy",  # namespace filler; stages run explicitly below
+            "--region", self.region,
+            "--project-name", self.project_name,
+            "--state-bucket", os.environ["STATE_BUCKET"],
+            "--engine-name", os.environ["ENGINE_NAME"],
+        ]
+        trigger_id = os.environ.get("TRIGGER_ID")
+        if trigger_id:
+            argv += ["--trigger-id", trigger_id]
+        for arn in [a for a in os.environ.get("API_CALLER_ROLE_ARNS", "").split(",") if a]:
+            argv += ["--api-caller-role-arn", arn]
+        for account_id in [a for a in os.environ.get("TARGET_ACCOUNT_IDS", "").split(",") if a]:
+            argv += ["--target-account-id", account_id]
+        return config0_addon.parse_args(argv)
+
+    def _run_installer_stage(self, stage):
+        checkout = self.checkout()
+        argv = [
+            sys.executable, "install/config0_addon.py",
+            "--stage", stage,
+            "--region", self.region,
+            "--project-name", self.project_name,
+            "--state-bucket", os.environ["STATE_BUCKET"],
+            "--engine-name", os.environ["ENGINE_NAME"],
+        ]
+        trigger_id = os.environ.get("TRIGGER_ID")
+        if stage == "deploy" and trigger_id:
+            argv += ["--trigger-id", trigger_id]
+            for arn in [a for a in os.environ.get("API_CALLER_ROLE_ARNS", "").split(",") if a]:
+                argv += ["--api-caller-role-arn", arn]
+        for account_id in [a for a in os.environ.get("TARGET_ACCOUNT_IDS", "").split(",") if a]:
+            argv += ["--target-account-id", account_id]
+        subprocess.run(argv, cwd=checkout, check=True)
+
+    # -- SSM install namespace --------------------------------------------
+
+    def _ssm_get(self, name, decrypt=False):
+        return self.ssm.get_parameter(Name=name, WithDecryption=decrypt)["Parameter"]["Value"]
+
+    def _ssm_delete(self, name):
+        try:
+            self.ssm.delete_parameter(Name=name)
+            self.logger.debug(f"deleted SSM parameter {name}")
+        except self.ssm.exceptions.ParameterNotFound:
+            self.logger.debug(f"SSM parameter {name} already absent")
+
+    def _ssm_optional(self, name, decrypt=False):
+        try:
+            return self._ssm_get(name, decrypt=decrypt)
+        except self.ssm.exceptions.ParameterNotFound:
+            return None
+
+    def _deploy_outputs(self):
+        return json.loads(self._ssm_get(f"{self.install_ssm_prefix}/config0_outputs"))
+
+    # -- stages: create ----------------------------------------------------
+
+    def create_ecr(self):
+        self._run_installer_stage("ecr")
+
+    def create_deploy(self):
+        self._run_installer_stage("deploy")
+        checkout = self.checkout()
+        completed = subprocess.run(
+            ["tofu", "-chdir=infra/deploy", "output", "-json"],
+            cwd=checkout, check=True, capture_output=True, text=True,
+        )
+        outputs = {
+            key: value["value"]
+            for key, value in json.loads(completed.stdout).items()
+            if not value.get("sensitive")
+        }
+        self.ssm.put_parameter(
+            Name=f"{self.install_ssm_prefix}/config0_outputs",
+            Value=json.dumps(outputs),
+            Type="String",
+            Overwrite=True,
+        )
+        print(f"deploy outputs recorded to {self.install_ssm_prefix}/config0_outputs")
+
+    def create_token(self):
+        # The token arrives through the encrypted run environment, never through
+        # the persisted order params. The execgroup runtime carries and reseals
+        # that in-memory environment for this stage.
+        token = os.environ["GITOPS_TOKEN"]
+        if not token:
+            raise ValueError("GITOPS_TOKEN is empty")
+        path = os.environ["CLONE_TOKEN_SSM_PATH"]
+        self.ssm.put_parameter(
+            Name=path,
+            Value=token,
+            Type="SecureString",
+            Overwrite=True,
+        )
+        print(f"clone token written to SSM {path}")
+
+    def create_register(self):
+        checkout = self.checkout()
+        webhook_url = self._deploy_outputs()["webhook_url"]
+        # The pinned runtime download URLs come from the checkout itself, so
+        # registration always matches the installed openci-tf version.
+        completed = subprocess.run(
+            [
+                sys.executable, "-c",
+                "import json; from src.domain.cmd_builder.installers import "
+                "PINNED_UPSTREAM_URLS; print(json.dumps(PINNED_UPSTREAM_URLS))",
+            ],
+            cwd=checkout, check=True, capture_output=True, text=True,
+        )
+        argv = [
+            sys.executable, "install/register_repo.py",
+            "--repo", os.environ["GITOPS_REPO"],
+            "--trigger-id", os.environ["TRIGGER_ID"],
+            "--account-alias", os.environ["ACCOUNT_ALIAS"],
+            "--webhook-url", webhook_url,
+            "--github-token-ssm", os.environ["CLONE_TOKEN_SSM_PATH"],
+            "--upstream-urls-json", completed.stdout.strip(),
+            "--region", self.region,
+            "--project-name", self.project_name,
+        ]
+        subprocess.run(argv, cwd=checkout, check=True)
+
+    def create_record(self):
+        outputs = self._deploy_outputs()
+        hook_id = self._ssm_get(f"{self.install_ssm_prefix}/webhook_hook_id")
+        # Identity per the config0_cli addon-record builder: one per account,
+        # no region, _id = md5("addon:openci_tf"). The engine runs on
+        # config0_publisher only, so the recipe is applied here directly.
+        #
+        # Project-dispatch identity contract (saas-api
+        # projectlib/gitops.py ADDON_IDENTITY_FIELDS, tested against the shared
+        # openci-tf-addon-record-seam.vectors.json): `owner` is the GitHub
+        # owner, `repo` is the BARE repo path segment (both are verbatim
+        # decision-26 state-key segments), `account_alias` is the tenant hub
+        # account's alias. GitHub API calls need the full identity, kept
+        # separately as `github_repo` = "owner/repo".
+        github_repo = os.environ["GITOPS_REPO"]
+        gh_owner, _, gh_repo = github_repo.partition("/")
+        if not gh_owner or not gh_repo:
+            raise ValueError(
+                f'GITOPS_REPO "{github_repo}" is not an owner/repo identity'
+            )
+        account_alias = os.environ["ACCOUNT_ALIAS"]
+        if not account_alias:
+            raise ValueError("ACCOUNT_ALIAS is empty")
+        resource = {
+            "_id": hashlib.md5(b"addon:openci_tf").hexdigest(),
+            "resource_type": "addon",
+            "provider": "openci-tf",
+            "source_method": "shellout",
+            "name": f"openci-tf-{os.environ.get('INSTALL_NAME', 'main')}",
+            "addon": "openci_tf",
+            "attempt_id": os.environ["ATTEMPT_ID"],
+            "owner": gh_owner,
+            "repo": gh_repo,
+            "github_repo": github_repo,
+            "account_alias": account_alias,
+            "trigger_id": os.environ["TRIGGER_ID"],
+            "webhook_hook_id": hook_id,
+            "clone_token_ssm_path": os.environ["CLONE_TOKEN_SSM_PATH"],
+            "region": self.region,
+        }
+        resource.update(outputs)
+        insert_resource_id(resource)
+        self.write_resource_to_json_file(resource)
+        print("addon record written (deploy outputs + registration values + attempt_id)")
+
+    # -- stages: destroy ---------------------------------------------------
+
+    def destroy_ecr(self):
+        checkout = self.checkout()
+        addon = self._installer(checkout)
+        args = self._addon_args(addon)
+        addon.require_tofu()
+        addon.prepare_root(args, "infra/deploy", "deploy", addon.deploy_tfvars(args))
+        subprocess.run(
+            ["tofu", "-chdir=infra/deploy", "destroy", "-input=false",
+             "-auto-approve", "-target=module.ecr"],
+            cwd=checkout, check=True,
+        )
+
+    def destroy_deploy(self):
+        checkout = self.checkout()
+        addon = self._installer(checkout)
+        args = self._addon_args(addon)
+        addon.require_tofu()
+        addon.prepare_root(args, "infra/deploy", "deploy", addon.deploy_tfvars(args))
+        # The deploy stage owns every deploy module except module.ecr, which
+        # the matching ecr stage created and removes after image cleanup.
+        targets = (
+            "module.hub_executor_poweruser",
+            "module.hub_setup",
+            "module.run_folder",
+            "module.run_folder_apply",
+            "module.run_folder_destroy",
+            "module.openci_tf",
+        )
+        subprocess.run(
+            [
+                "tofu", "-chdir=infra/deploy", "destroy", "-input=false",
+                "-auto-approve",
+                *[arg for target in targets for arg in ("-target", target)],
+            ],
+            cwd=checkout, check=True,
+        )
+        addon.prepare_root(
+            args, "infra/foundation", "foundation",
+            [f"aws_region={args.region}", f"name_prefix={args.project_name}"],
+        )
+        subprocess.run(
+            ["tofu", "-chdir=infra/foundation", "destroy", "-input=false", "-auto-approve"],
+            cwd=checkout, check=True,
+        )
+        self._ssm_delete(f"{self.install_ssm_prefix}/config0_outputs")
+
+    def destroy_token(self):
+        self._ssm_delete(os.environ["CLONE_TOKEN_SSM_PATH"])
+        print("clone token deleted from SSM")
+
+    def _qhost_resources(self, resource_type):
+        qhost_url = os.environ["QHOST_URL"].rstrip("/")
+        qhost_token = os.environ["QHOST_JWT_TOKEN"]
+        response = requests.get(
+            f"{qhost_url}/api/v1/resources",
+            headers={"Authorization": f"Bearer {qhost_token}"},
+            params={"resource_type": resource_type},
+            timeout=30,
+        )
+        response.raise_for_status()
+        rows = response.json()["data"]
+        if not isinstance(rows, list):
+            raise TypeError("QHost resources response data must be a list")
+        return rows
+
+    def _pipeline_pr_numbers(self, repo):
+        pipelines = [
+            row.get("data") or {}
+            for row in self._qhost_resources("pipeline")
+            if (row.get("data") or {}).get("repo") == repo
+        ]
+        project_ids = {
+            str(data["project_id"])
+            for data in pipelines
+            if data.get("project_id")
+        }
+        pipeline_runs = [
+            row.get("data") or {}
+            for row in self._qhost_resources("pipeline_run")
+            if str((row.get("data") or {}).get("project_id") or "") in project_ids
+        ]
+        return {
+            int(data["pr_number"])
+            for data in [*pipelines, *pipeline_runs]
+            if int(data.get("pr_number") or 0) > 0
+        }
+
+    def _close_pipeline_prs(self, repo, token, pr_numbers):
+        for pr_number in sorted(pr_numbers):
+            response = requests.patch(
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+                json={"state": "closed"},
+                timeout=30,
+            )
+            response.raise_for_status()
+            print(f"closed GitHub PR #{pr_number} on {repo}")
+
+    def _registration_settings(self):
+        outputs_value = self._ssm_optional(
+            f"{self.install_ssm_prefix}/config0_outputs"
+        )
+        if outputs_value is None:
+            return None, []
+        outputs = json.loads(outputs_value)
+        table = outputs["settings_table_name"]
+        keys = [
+            {"pk": {"S": "repo"}, "sk": {"S": os.environ["TRIGGER_ID"]}},
+            {"pk": {"S": "account"}, "sk": {"S": os.environ["ACCOUNT_ALIAS"]}},
+        ]
+        rows = [
+            self.dynamodb.get_item(TableName=table, Key=key).get("Item")
+            for key in keys
+        ]
+        return table, [
+            (key, row) for key, row in zip(keys, rows, strict=True) if row
+        ]
+
+    def destroy_register(self):
+        import urllib.error
+        import urllib.request
+
+        repo = os.environ["GITOPS_REPO"]
+        pr_numbers = self._pipeline_pr_numbers(repo)
+        hook_id_param = f"{self.install_ssm_prefix}/webhook_hook_id"
+        hook_id = self._ssm_optional(hook_id_param)
+        table, settings = self._registration_settings()
+        token = self._ssm_optional(
+            os.environ["CLONE_TOKEN_SSM_PATH"], decrypt=True
+        )
+        if token is None:
+            if hook_id is not None or pr_numbers or settings:
+                raise ValueError(
+                    "clone token is missing while durable repository registration "
+                    "evidence remains; refusing to skip GitHub cleanup"
+                )
+            print(
+                "no token, webhook, PR, or settings evidence - registration "
+                "was never activated; continuing partial-install teardown"
+            )
+            return
+
+        # PRs must close while the token still exists. This includes the
+        # write-back PRs on pipeline rows and dedicated mutation PRs on
+        # pipeline_run rows.
+        self._close_pipeline_prs(repo, token, pr_numbers)
+
+        if hook_id is not None:
+            request = urllib.request.Request(
+                f"https://api.github.com/repos/{repo}/hooks/{hook_id}",
+                method="DELETE",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            try:
+                urllib.request.urlopen(request)
+                print(f"deleted GitHub webhook {hook_id} on {repo}")
+            except urllib.error.HTTPError as error:
+                if error.code != 404:
+                    raise
+                print(f"GitHub webhook {hook_id} on {repo} already absent")
+            self._ssm_delete(hook_id_param)
+        else:
+            print("no recorded webhook hook id - registration already removed")
+
+        if table is not None:
+            for key, _ in settings:
+                self.dynamodb.delete_item(TableName=table, Key=key)
+            print("deleted repository and hub-alias settings rows")
+        self._ssm_delete(f"{self.install_ssm_prefix}/webhook_secret")
+
+    # -- entrypoint --------------------------------------------------------
+
+    def _write_destroy_evidence(self):
+        """Write this side-effect stage's successful teardown receipt.
+
+        These stages do not own the generic resource row or its state pointer.
+        Their method returns only after the matching external resources are
+        removed, so a successful command is the stage-local zero-remaining
+        contract consumed by the generic remove handler.
+        """
+        trigger_id = os.environ.get("QUEUE_ID") or os.environ.get("RUN_ID")
+        if not trigger_id:
+            raise ValueError("destroy evidence requires QUEUE_ID or RUN_ID")
+        marker = (
+            "CONFIG0_DESTROY_PRE_STATE_COUNT=0\n"
+            "CONFIG0_DESTROY_POST_STATE_COUNT=0"
+        )
+        self.write_resource_to_json_file(
+            {
+                "status": True,
+                "execution_result": {
+                    "trigger_id": trigger_id,
+                    "status": "succeeded",
+                    "steps": [{"output": marker}],
+                },
+            }
+        )
+
+    def run(self):
+        method_name = f"{self.method}_{self.stage}"
+        print(f"openci-tf addon stage={self.stage} method={self.method}")
+        getattr(self, method_name)()
+        if self.method == "destroy":
+            self._write_destroy_evidence()
+        print(f"openci-tf addon stage={self.stage} method={self.method} complete")
+
+
+if __name__ == "__main__":
+    main = OpenciTfAddonStage()
+    main.run()
