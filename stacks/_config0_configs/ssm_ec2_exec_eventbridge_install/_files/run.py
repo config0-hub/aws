@@ -146,12 +146,20 @@ class Main(newSchedStack):
         stack = self.stack
         stack.init_variables()
         stack.verify_variables()
+        # SubstackAdd.insert has a CLOSED signature: the child stack's args ride
+        # the ``arguments=`` dict (the setup_codebuild_ci / legacy add_codebuild_ci
+        # pattern), never flat kwargs — those raise TypeError and no order emits.
+        arguments = {
+            "bucket": stack.s3_bucket,
+            "acl": "private",
+            "versioning": "true",
+            "force_destroy": "true",
+            "aws_default_region": stack.aws_region,
+        }
         stack.lambda_artifacts_bucket.insert(
-            bucket=stack.s3_bucket,
-            acl="private",
-            versioning=True,
-            force_destroy=True,
-            aws_default_region=stack.aws_region,
+            display=True,
+            arguments=arguments,
+            human_description=f"Create s3 bucket {stack.s3_bucket} for Lambda artifacts",
         )
         return True
 
