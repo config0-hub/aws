@@ -72,7 +72,11 @@ class Main(newSchedStack):
         self.parse.add_optional(key="engine_name", default="config0-xe", types="str")
         self.parse.add_optional(key="remote_stateful_bucket", default=None, types="str")
 
-        self.parse.add_optional(key="project_name", default="openci-tf", types="str")
+        # NOT "project_name": Stack.__init__ sets a real ``project_name``
+        # instance attribute (= cluster, "" on addon runs) that shadows any
+        # parsed key of that name (__getattr__ never fires), so a stack-declared
+        # project_name silently reads "" - the attempt-13 register failure.
+        self.parse.add_optional(key="openci_tf_project", default="openci-tf", types="str")
         self.parse.add_optional(key="install_name", default="main", types="str")
         self.parse.add_optional(key="aws_default_region", default="ap-northeast-1", types="str")
 
@@ -157,7 +161,7 @@ class Main(newSchedStack):
         env_vars = {
             "STAGE": stage,
             "OPENCI_TF_REGION": self.stack.aws_default_region,
-            "OPENCI_TF_PROJECT": self.stack.project_name,
+            "OPENCI_TF_PROJECT": self.stack.openci_tf_project,
             "OPENCI_TF_REPO_URL": self.stack.openci_tf_repo_url,
             "OPENCI_TF_GIT_REF": self.stack.openci_tf_git_ref,
             "STATE_BUCKET": self.stack.remote_stateful_bucket,
@@ -290,7 +294,7 @@ class Main(newSchedStack):
         build_envs = {
             "GHCR_IMAGE": self.stack.ghcr_image,
             "ECR_IMAGE_TAG": self.stack.image_tag,
-            "OPENCI_TF_PROJECT": self.stack.project_name,
+            "OPENCI_TF_PROJECT": self.stack.openci_tf_project,
             "STATEFUL_ID": self.stack.stateful_id,
             "TMP_BUCKET": self.stack.tmp_bucket,
             "SHARE_DIR": self.stack.share_dir,

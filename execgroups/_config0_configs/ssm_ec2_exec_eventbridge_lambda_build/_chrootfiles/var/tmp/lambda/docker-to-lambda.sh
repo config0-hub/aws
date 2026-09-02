@@ -32,6 +32,18 @@ export S3_BUCKET=${S3_BUCKET:=}
 # -> terraform sees a changed s3_key and rolls the code out. Default empty
 # keeps the standalone behavior (upload to the bucket root).
 export KEY_PREFIX=${KEY_PREFIX:=}
+# METHOD rides the SOPS-sealed build env (the install stack's build_envs), not
+# the parent process: CodeBuild never sees the CLI's METHOD. On a destroy run
+# the install job re-emits this order; there is nothing here to tear down (the
+# zips live in the artifact bucket the stack's bucket job deletes), so print
+# the markers the CLI's execgroup destroy finalizer reads from the engine
+# ExecutionResult and stop - no docker build, no upload.
+METHOD="${METHOD:-create}"
+if [ "$METHOD" = "destroy" ]; then
+    echo "CONFIG0_DESTROY_PRE_STATE_COUNT=0"
+    echo "CONFIG0_DESTROY_POST_STATE_COUNT=0"
+    exit 0
+fi
 
 LAMBDAS=("$@")
 if [ ${#LAMBDAS[@]} -eq 0 ]; then

@@ -139,7 +139,12 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             raise ValueError(f'METHOD "{self.method}" not supported; expected create|destroy')
 
         self.region = os.environ["OPENCI_TF_REGION"]
-        self.project_name = os.environ.get("OPENCI_TF_PROJECT", "openci-tf")
+        # Same semantics as openci-tf-addon-tofu.py env(): missing OR empty is
+        # a broken order, never a silent default (an empty value once built the
+        # SSM path /openci-tf/install//config0_outputs).
+        self.project_name = os.environ.get("OPENCI_TF_PROJECT")
+        if not self.project_name:
+            raise KeyError("OPENCI_TF_PROJECT is required")
         self.install_ssm_prefix = f"/openci-tf/install/{self.project_name}"
         self._checkout = None
 

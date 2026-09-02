@@ -92,7 +92,7 @@ def _installer_argv(stage):
     argv = [
         "--stage", stage,
         "--region", env("OPENCI_TF_REGION"),
-        "--project-name", env("OPENCI_TF_PROJECT", "openci-tf"),
+        "--project-name", env("OPENCI_TF_PROJECT"),
         "--state-bucket", env("STATE_BUCKET"),
         "--engine-name", env("ENGINE_NAME"),
     ]
@@ -115,7 +115,7 @@ def _installer(source):
 
 
 def _outputs_param():
-    return f"/openci-tf/install/{env('OPENCI_TF_PROJECT', 'openci-tf')}/config0_outputs"
+    return f"/openci-tf/install/{env('OPENCI_TF_PROJECT')}/config0_outputs"
 
 
 def create(stage, source):

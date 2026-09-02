@@ -218,7 +218,15 @@ class Main(newSchedStack):
                                # (codebuild_srcfile_helper.py reads this via the
                                # CODEBUILD_PARAMS_HASH channel)
             'USE_CODEBUILD': "True",
-            "AWS_DEFAULT_REGION": stack.aws_region
+            "AWS_DEFAULT_REGION": stack.aws_region,
+            # CodeBuild receives the sealed environment, not the parent
+            # process environment, so the lifecycle method must be explicit:
+            # docker-to-lambda.sh prints the destroy markers and skips the
+            # build when METHOD=destroy (DESTROY=True is the run-env flag the
+            # worker's on_delete walk keys off, same as run_notify_success).
+            "METHOD": "destroy"
+            if os.environ.get("DESTROY", "").lower() in ("true", "1")
+            else "create",
         }
 
         env_vars = {
