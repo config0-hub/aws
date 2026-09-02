@@ -45,7 +45,9 @@ class Main(newSchedStack):
         # The target project's identity, FROZEN at its first dispatch —
         # saas-api passes it from the project_config row's data.gitops.
         self.parse.add_required(key="project_id", types="str")
-        self.parse.add_required(key="project_name", types="str")
+        # Not "project_name": that is a Stack built-in (the cluster alias)
+        # and the runtime refuses declared keys that shadow one.
+        self.parse.add_required(key="gitops_project_name", types="str")
         self.parse.add_required(key="owner_id", types="str")
         self.parse.add_required(key="repo_owner", types="str")   # GitHub owner
         self.parse.add_required(key="repo_name", types="str")    # bare repo name
@@ -103,7 +105,7 @@ class Main(newSchedStack):
         parts = [
             "config0", "gitops", "writeback",
             f"project_id={self.stack.project_id}",
-            f"project_name={self.stack.project_name}",
+            f"project_name={self.stack.gitops_project_name}",
             f"owner_id={self.stack.owner_id}",
             f"repo_owner={self.stack.repo_owner}",
             f"repo_name={self.stack.repo_name}",

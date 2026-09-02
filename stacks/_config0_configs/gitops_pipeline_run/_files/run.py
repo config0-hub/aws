@@ -51,7 +51,9 @@ class Main(newSchedStack):
         # The run's identity — saas-api resolves it at dispatch and writes the
         # pipeline_run record before placing this order.
         self.parse.add_required(key="project_id", types="str")
-        self.parse.add_required(key="project_name", types="str")
+        # Not "project_name": that is a Stack built-in (the cluster alias)
+        # and the runtime refuses declared keys that shadow one.
+        self.parse.add_required(key="gitops_project_name", types="str")
         self.parse.add_required(key="owner_id", types="str")
         self.parse.add_required(key="action", types="str",
                                 choices=["plan", "drift", "report",
@@ -111,7 +113,7 @@ class Main(newSchedStack):
         parts = [
             "config0", "gitops", "pipeline-run",
             f"project_id={self.stack.project_id}",
-            f"project_name={self.stack.project_name}",
+            f"project_name={self.stack.gitops_project_name}",
             f"owner_id={self.stack.owner_id}",
             f"action={self.stack.action}",
             f"request_id={self.stack.request_id}",

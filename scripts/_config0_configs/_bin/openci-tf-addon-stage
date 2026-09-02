@@ -185,6 +185,27 @@ class OpenciTfAddonStage(ResourceCmdHelper):
     def _deploy_outputs(self):
         return json.loads(self._ssm_get(f"{self.install_ssm_prefix}/config0_outputs"))
 
+    def _hook_id(self, *, optional=False):
+        """The GitHub webhook hook id register_repo.py recorded in SSM.
+
+        register_repo.py stores it as a SecureString, so the read MUST decrypt:
+        an undecrypted read returns the KMS ciphertext blob, which then lands in
+        the addon record and makes the destroy-side hook DELETE hit a 404 that
+        looks like "already absent" while the real hook leaks.
+        """
+        name = f"{self.install_ssm_prefix}/webhook_hook_id"
+        if optional:
+            value = self._ssm_optional(name, decrypt=True)
+            if value is None:
+                return None
+        else:
+            value = self._ssm_get(name, decrypt=True)
+        if not re.fullmatch(r"[0-9]+", value):
+            raise ValueError(
+                f"SSM {name} is not a plain GitHub hook id (got {value[:12]!r}...)"
+            )
+        return value
+
     # -- stages: create ----------------------------------------------------
 
     def create_token(self):
@@ -231,7 +252,7 @@ class OpenciTfAddonStage(ResourceCmdHelper):
 
     def create_record(self):
         outputs = self._deploy_outputs()
-        hook_id = self._ssm_get(f"{self.install_ssm_prefix}/webhook_hook_id")
+        hook_id = self._hook_id()
         # Identity per the config0_cli addon-record builder: one per account,
         # no region, _id = md5("addon:openci_tf"). The engine runs on
         # config0_publisher only, so the recipe is applied here directly.
@@ -359,7 +380,7 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         repo = os.environ["GITOPS_REPO"]
         pr_numbers = self._pipeline_pr_numbers(repo)
         hook_id_param = f"{self.install_ssm_prefix}/webhook_hook_id"
-        hook_id = self._ssm_optional(hook_id_param)
+        hook_id = self._hook_id(optional=True)
         table, settings = self._registration_settings()
         token = self._ssm_optional(
             os.environ["CLONE_TOKEN_SSM_PATH"], decrypt=True
