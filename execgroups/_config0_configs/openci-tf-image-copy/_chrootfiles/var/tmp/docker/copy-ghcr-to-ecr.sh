@@ -46,6 +46,8 @@ if [ "$METHOD" = "destroy" ]; then
         --image-ids imageTag="$ECR_IMAGE_TAG" >/dev/null 2>"$ERROR_FILE"; then
         if grep -q 'ImageNotFoundException' "$ERROR_FILE"; then
             echo "image tag ${ECR_IMAGE_TAG} already absent from ${PROJECT}"
+            echo "CONFIG0_DESTROY_PRE_STATE_COUNT=0"
+            echo "CONFIG0_DESTROY_POST_STATE_COUNT=0"
             exit 0
         fi
         cat "$ERROR_FILE" >&2
@@ -55,6 +57,11 @@ if [ "$METHOD" = "destroy" ]; then
         --repository-name "$PROJECT" \
         --image-ids imageTag="$ECR_IMAGE_TAG"
     echo "deleted ${ECR_IMAGE}"
+    # The CLI's execgroup destroy finalizer reads these markers from the engine
+    # ExecutionResult; this stage owns no generic resource row, so a successful
+    # tag deletion is the zero-remaining evidence.
+    echo "CONFIG0_DESTROY_PRE_STATE_COUNT=0"
+    echo "CONFIG0_DESTROY_POST_STATE_COUNT=0"
     exit 0
 fi
 

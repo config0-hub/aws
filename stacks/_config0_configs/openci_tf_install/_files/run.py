@@ -21,9 +21,11 @@ class Main(newSchedStack):
 
     One scheduled job per install stage (plan "Install and removal"):
 
-        ecr          installer --stage ecr (ECR repository via targeted apply)
+        ecr          installer --stage ecr (ECR repository via targeted apply),
+                     delegated to CodeBuild (openci-tf-addon-tofu: git + tofu)
         image_copy   GHCR -> tenant ECR image copy, delegated to CodeBuild
-        deploy       installer --stage deploy (foundation + full deploy apply)
+        deploy       installer --stage deploy (foundation + full deploy apply),
+                     delegated to CodeBuild (openci-tf-addon-tofu)
         token        GitHub clone token -> SSM /openci-tf/clone-token/<name>
         register     register_repo.py (webhook secret, settings, webhook)
         record       promote deploy outputs + registration values + attempt_id
@@ -79,7 +81,9 @@ class Main(newSchedStack):
         # the plan's guiding rule, corrected while running the user story).
         self.parse.add_optional(key="trigger_id", default=None, types="str")
 
-        # The pinned openci-tf source the engine-side stages clone.
+        # The pinned openci-tf source every stage fetches (the tofu stages
+        # clone it in CodeBuild; the Lambda-side register stage downloads the
+        # commit's archive tarball, no git there).
         self.parse.add_optional(key="openci_tf_repo_url",
                                 default="https://github.com/config0-hub/openci-tf.git",
                                 types="str")
@@ -89,10 +93,14 @@ class Main(newSchedStack):
             types="str",
         )
 
-        # codebuild framing for the image copy (mirrors
+        # codebuild framing for the image copy and the tofu stages (mirrors
         # ssm_ec2_exec_eventbridge_install's lambda_build order)
         self.parse.add_optional(key="compute_type", types="str", default="BUILD_GENERAL1_SMALL")
         self.parse.add_optional(key="build_timeout", types="int", default=1200)
+        # openci-tf needs tofu >= 1.10 (S3 native lock file); the engine image
+        # pins an older one, so the tofu stages install this release themselves.
+        # Default = what openci-tf's own docker/Dockerfile.test pins.
+        self.parse.add_optional(key="tofu_version", types="str", default="1.12.6")
         self.parse.add_optional(key="cloud_tags_hash", default='null')
         self.parse.add_optional(key="stateful_id", default="_random")
         self.parse.add_optional(key="share_dir", default="/var/tmp/share")
@@ -102,17 +110,24 @@ class Main(newSchedStack):
                                  "addon_execgroup")
         self.stack.add_execgroup("config0-hub:::aws::openci-tf-image-copy",
                                  "image_copy_execgroup")
+        self.stack.add_execgroup("config0-hub:::aws::openci-tf-addon-tofu",
+                                 "tofu_execgroup")
 
         self.stack.init_execgroups()
 
     def _init_common(self):
         """Derive the values every stage shares."""
         import hashlib
+        import os
         import re
 
         if not self.stack.remote_stateful_bucket:
             self.stack.set_variable("remote_stateful_bucket",
                                     self.stack.bucket_names["stateful"])
+
+        self.stack.set_variable("run_share_dir",
+                                os.path.join(self.stack.share_dir,
+                                             self.stack.stateful_id))
 
         gh_owner, gh_repo = self.stack.repo.split("/", 1)
 
@@ -177,6 +192,56 @@ class Main(newSchedStack):
 
         self.stack.addon_execgroup.insert(**inputargs)
 
+    def _insert_tofu_stage(self, stage, build_timeout, human_description):
+        """One CodeBuild order running openci-tf-addon-tofu.py for a tofu stage.
+
+        Same codebuild-srcfile framing as the image copy, minus DIRECT: the
+        engine image (git, python3, boto3) is enough; the script installs the
+        pinned tofu itself. The stage inputs ride the SOPS-sealed build env.
+        """
+        import json
+
+        build_envs = self._stage_env_vars(stage)
+        build_envs.update({
+            "METHOD": "destroy" if self._destroying() else "create",
+            "TOFU_VERSION": self.stack.tofu_version,
+            "STATEFUL_ID": self.stack.stateful_id,
+            "TMP_BUCKET": self.stack.tmp_bucket,
+            "SHARE_DIR": self.stack.share_dir,
+            "WORKING_SUBDIR": "var/tmp/openci-tf",
+            "RUN_SHARE_DIR": self.stack.run_share_dir,
+            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
+            "WORKING_DIR": self.stack.run_share_dir,
+            "CODEBUILD_COMPUTE_TYPE": self.stack.compute_type,
+            "SCRIPT_NAME": "openci-tf-addon-tofu.py",
+            "BUILD_TIMEOUT": build_timeout,
+            "USE_CODEBUILD": "True",
+        })
+
+        env_vars = {
+            "CODEBUILD_PARAMS_HASH": self.stack.serialize({
+                "env_vars": build_envs,
+                "build_env_vars": build_envs}, json=False),
+            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
+            "AWS_DEFAULT_REGION": self.stack.aws_default_region,
+            "WORKING_DIR": self.stack.run_share_dir,
+            "APP_NAME": "openci-tf",
+            "APP_DIR": "var/tmp/openci-tf"
+        }
+
+        inputargs = {
+            "name": f"openci-tf-{self.stack.install_name}-{stage}",
+            "env_vars": json.dumps(env_vars),
+            # Build time plus queue/provisioning headroom; the worker mints the
+            # target session from this, bounded by the 3600s role-chaining cap.
+            "timeout": int(build_timeout) + 600,
+            "human_description": human_description
+        }
+        if self.stack.cloud_tags_hash:
+            inputargs["cloud_tags_hash"] = self.stack.cloud_tags_hash
+
+        self.stack.tofu_execgroup.insert(**inputargs)
+
     def _notify(self, status, error=None):
         """Emit the gitops status-producer order (`config0 gitops notify`)."""
         import shlex
@@ -204,9 +269,14 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
-        self._insert_stage(
-            "ecr", 1800,
-            human_description="openci-tf addon: create the ECR repository")
+        self._insert_tofu_stage(
+            "ecr", 900,
+            human_description=(
+                "openci-tf addon: destroy the ECR repository"
+                if self._destroying()
+                else "openci-tf addon: create the ECR repository"
+            ),
+        )
         return True
 
     def run_image_copy(self):
@@ -216,10 +286,6 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
-
-        self.stack.set_variable("run_share_dir",
-                                os.path.join(self.stack.share_dir,
-                                             self.stack.stateful_id))
 
         build_envs = {
             "GHCR_IMAGE": self.stack.ghcr_image,
@@ -274,9 +340,14 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
-        self._insert_stage(
-            "deploy", 3600,
-            human_description="openci-tf addon: apply foundation and deploy")
+        self._insert_tofu_stage(
+            "deploy", 2400,
+            human_description=(
+                "openci-tf addon: destroy deploy and foundation"
+                if self._destroying()
+                else "openci-tf addon: apply foundation and deploy"
+            ),
+        )
         return True
 
     def run_token(self):

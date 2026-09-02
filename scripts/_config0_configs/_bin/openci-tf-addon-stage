@@ -4,23 +4,21 @@ openci-tf config0-addon stage runner.
 
 One script, one STAGE env var per execgroup order of the openci_tf_install
 stack. The stack (run.py) declares the stages as scheduled jobs; each job's
-execgroup order runs this script inside the tenant engine with the stage
-selected by STAGE and the lifecycle side selected by METHOD (create|destroy).
-Everything that touches the tenant account or the user's repository runs here,
-through the orders queue, using openci-tf's own installer scripts (decision 22)
-from a pinned checkout of the openci-tf repository.
+execgroup order runs this script inside the tenant config0-worker Lambda with
+the stage selected by STAGE and the lifecycle side selected by METHOD
+(create|destroy). The Lambda ships python, boto3, and requests and nothing
+else (no git, no tofu), so this script owns only the stages that need exactly
+that. The tofu stages (ecr, deploy, and their destroys) run openci-tf's own
+installer in the engine's CodeBuild through the openci-tf-addon-tofu execgroup
+(_chrootfiles/var/tmp/openci-tf/openci-tf-addon-tofu.py).
 
 Stages (create):
-    ecr       install/config0_addon.py --stage ecr   (targeted module.ecr apply)
-    deploy    install/config0_addon.py --stage deploy, then the infra/deploy
-              tofu outputs are recorded to SSM /openci-tf/install/<project>/
-              config0_outputs for the register and record stages
     token     the GitHub clone token (encrypted run environment, never order
               params) is written to SSM /openci-tf/clone-token/<name> as a
               SecureString
-    register  install/register_repo.py (empty-repo initialization, webhook
-              secret, repo plus hub-alias settings, webhook create/reconcile;
-              hook_id recorded in SSM)
+    register  install/register_repo.py from the pinned openci-tf source
+              (empty-repo initialization, webhook secret, repo plus hub-alias
+              settings, webhook create/reconcile; hook_id recorded in SSM)
     record    the addon resource record (deploy outputs + registration values
               + attempt_id) is written through the resource JSON channel
 
@@ -30,9 +28,11 @@ deletes the typed record:
     register  close recorded write-back/mutation PRs, delete the webhook and
               registration settings; a provably unregistered partial install
               can continue without a token
-    deploy    destroy non-ECR deploy modules, then foundation
-    ecr       destroy module.ecr after the image-copy stage deleted its tag
     token     delete the SSM clone-token parameter
+
+The pinned openci-tf source (OPENCI_TF_REPO_URL at OPENCI_TF_GIT_REF, a full
+commit sha) is fetched as GitHub's archive tarball over HTTPS and verified
+against the sha from the archive itself - no git binary is involved.
 
 The GitHub clone token is read ONLY from the GITOPS_TOKEN encrypted run
 environment or tenant SSM. It is never printed, logged, or written to an order
@@ -54,12 +54,16 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-import argparse
 import hashlib
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
+import tarfile
+from urllib.parse import urlparse
+import urllib.request
 
 import boto3
 import requests
@@ -69,7 +73,54 @@ from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.resource.manage_output import insert_resource_id
 from config0_publisher.tmpdir import OnDiskTmpDir
 
-STAGES = ("ecr", "deploy", "token", "register", "record")
+STAGES = ("token", "register", "record")
+
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def _github_owner_repo(repo_url):
+    """owner, repo of a https://github.com/<owner>/<repo>[.git] clone URL."""
+    parsed = urlparse(repo_url)
+    if parsed.scheme != "https" or parsed.netloc != "github.com":
+        raise ValueError(f"OPENCI_TF_REPO_URL must be a https://github.com URL, got {repo_url!r}")
+    owner, _, repo = parsed.path.strip("/").partition("/")
+    repo = repo.removesuffix(".git")
+    if not owner or not repo or "/" in repo:
+        raise ValueError(f"OPENCI_TF_REPO_URL must name <owner>/<repo>, got {repo_url!r}")
+    return owner, repo
+
+
+def fetch_pinned_source(repo_url, git_ref, dest_root, urlopen=urllib.request.urlopen):
+    """Download the repository tree at exactly ``git_ref`` without git.
+
+    GitHub serves ``git archive`` tarballs at codeload for a commit sha. The
+    archive's pax global header ``comment`` is the archived commit id and its
+    single top-level directory is ``<repo>-<sha>``, so the pin is verified
+    from the archive content, not from the URL that was asked for. A sha
+    GitHub does not know is a 404: the HTTPError propagates.
+
+    Returns the extracted source directory.
+    """
+    if not _COMMIT_SHA.fullmatch(git_ref):
+        raise ValueError(f"OPENCI_TF_GIT_REF must be a 40-char commit sha, got {git_ref!r}")
+    owner, repo = _github_owner_repo(repo_url)
+    url = f"https://codeload.github.com/{owner}/{repo}/tar.gz/{git_ref}"
+    archive_path = os.path.join(dest_root, f"{repo}-{git_ref}.tar.gz")
+    with urlopen(url, timeout=120) as src, open(archive_path, "wb") as out:
+        shutil.copyfileobj(src, out)
+    top = f"{repo}-{git_ref}"
+    with tarfile.open(archive_path) as archive:
+        archived = archive.pax_headers.get("comment")
+        if archived != git_ref:
+            raise ValueError(
+                f"{url} archived commit {archived!r} does not match the pinned {git_ref}"
+            )
+        roots = {member.name.split("/", 1)[0] for member in archive.getmembers()}
+        if roots != {top}:
+            raise ValueError(f"{url} top-level entries {sorted(roots)} != [{top!r}]")
+        archive.extractall(dest_root, filter="data")
+    os.remove(archive_path)
+    return os.path.join(dest_root, top)
 
 
 class OpenciTfAddonStage(ResourceCmdHelper):
@@ -98,65 +149,15 @@ class OpenciTfAddonStage(ResourceCmdHelper):
     # -- openci-tf checkout ------------------------------------------------
 
     def checkout(self):
-        """Clone the pinned openci-tf repository once; return its directory."""
+        """Fetch the pinned openci-tf source once; return its directory."""
         if self._checkout:
             return self._checkout
-        repo_url = os.environ["OPENCI_TF_REPO_URL"]
-        git_ref = os.environ["OPENCI_TF_GIT_REF"]
-        tempdir = OnDiskTmpDir()
-        dest = os.path.join(tempdir.get(), "openci-tf")
-        subprocess.run(["git", "clone", repo_url, dest], check=True)
-        subprocess.run(["git", "-C", dest, "checkout", git_ref], check=True)
-        self._checkout = dest
-        return dest
-
-    def _installer(self, checkout):
-        """Import openci-tf's own installer module from the checkout.
-
-        Reusing install/config0_addon.py's prepare_root/deploy_tfvars keeps the
-        backend, tfvars, and init flags identical between apply and destroy —
-        no second copy of the installer's knowledge lives here.
-        """
-        sys.path.insert(0, os.path.join(checkout, "install"))
-        import config0_addon  # noqa: PLC0415 — importable only after the clone
-        return config0_addon
-
-    def _addon_args(self, config0_addon):
-        """The argparse namespace install/config0_addon.py's helpers consume."""
-        argv = [
-            "--stage", "deploy",  # namespace filler; stages run explicitly below
-            "--region", self.region,
-            "--project-name", self.project_name,
-            "--state-bucket", os.environ["STATE_BUCKET"],
-            "--engine-name", os.environ["ENGINE_NAME"],
-        ]
-        trigger_id = os.environ.get("TRIGGER_ID")
-        if trigger_id:
-            argv += ["--trigger-id", trigger_id]
-        for arn in [a for a in os.environ.get("API_CALLER_ROLE_ARNS", "").split(",") if a]:
-            argv += ["--api-caller-role-arn", arn]
-        for account_id in [a for a in os.environ.get("TARGET_ACCOUNT_IDS", "").split(",") if a]:
-            argv += ["--target-account-id", account_id]
-        return config0_addon.parse_args(argv)
-
-    def _run_installer_stage(self, stage):
-        checkout = self.checkout()
-        argv = [
-            sys.executable, "install/config0_addon.py",
-            "--stage", stage,
-            "--region", self.region,
-            "--project-name", self.project_name,
-            "--state-bucket", os.environ["STATE_BUCKET"],
-            "--engine-name", os.environ["ENGINE_NAME"],
-        ]
-        trigger_id = os.environ.get("TRIGGER_ID")
-        if stage == "deploy" and trigger_id:
-            argv += ["--trigger-id", trigger_id]
-            for arn in [a for a in os.environ.get("API_CALLER_ROLE_ARNS", "").split(",") if a]:
-                argv += ["--api-caller-role-arn", arn]
-        for account_id in [a for a in os.environ.get("TARGET_ACCOUNT_IDS", "").split(",") if a]:
-            argv += ["--target-account-id", account_id]
-        subprocess.run(argv, cwd=checkout, check=True)
+        self._checkout = fetch_pinned_source(
+            os.environ["OPENCI_TF_REPO_URL"],
+            os.environ["OPENCI_TF_GIT_REF"],
+            OnDiskTmpDir().get(),
+        )
+        return self._checkout
 
     # -- SSM install namespace --------------------------------------------
 
@@ -180,29 +181,6 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         return json.loads(self._ssm_get(f"{self.install_ssm_prefix}/config0_outputs"))
 
     # -- stages: create ----------------------------------------------------
-
-    def create_ecr(self):
-        self._run_installer_stage("ecr")
-
-    def create_deploy(self):
-        self._run_installer_stage("deploy")
-        checkout = self.checkout()
-        completed = subprocess.run(
-            ["tofu", "-chdir=infra/deploy", "output", "-json"],
-            cwd=checkout, check=True, capture_output=True, text=True,
-        )
-        outputs = {
-            key: value["value"]
-            for key, value in json.loads(completed.stdout).items()
-            if not value.get("sensitive")
-        }
-        self.ssm.put_parameter(
-            Name=f"{self.install_ssm_prefix}/config0_outputs",
-            Value=json.dumps(outputs),
-            Type="String",
-            Overwrite=True,
-        )
-        print(f"deploy outputs recorded to {self.install_ssm_prefix}/config0_outputs")
 
     def create_token(self):
         # The token arrives through the encrypted run environment, never through
@@ -292,52 +270,6 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         print("addon record written (deploy outputs + registration values + attempt_id)")
 
     # -- stages: destroy ---------------------------------------------------
-
-    def destroy_ecr(self):
-        checkout = self.checkout()
-        addon = self._installer(checkout)
-        args = self._addon_args(addon)
-        addon.require_tofu()
-        addon.prepare_root(args, "infra/deploy", "deploy", addon.deploy_tfvars(args))
-        subprocess.run(
-            ["tofu", "-chdir=infra/deploy", "destroy", "-input=false",
-             "-auto-approve", "-target=module.ecr"],
-            cwd=checkout, check=True,
-        )
-
-    def destroy_deploy(self):
-        checkout = self.checkout()
-        addon = self._installer(checkout)
-        args = self._addon_args(addon)
-        addon.require_tofu()
-        addon.prepare_root(args, "infra/deploy", "deploy", addon.deploy_tfvars(args))
-        # The deploy stage owns every deploy module except module.ecr, which
-        # the matching ecr stage created and removes after image cleanup.
-        targets = (
-            "module.hub_executor_poweruser",
-            "module.hub_setup",
-            "module.run_folder",
-            "module.run_folder_apply",
-            "module.run_folder_destroy",
-            "module.openci_tf",
-        )
-        subprocess.run(
-            [
-                "tofu", "-chdir=infra/deploy", "destroy", "-input=false",
-                "-auto-approve",
-                *[arg for target in targets for arg in ("-target", target)],
-            ],
-            cwd=checkout, check=True,
-        )
-        addon.prepare_root(
-            args, "infra/foundation", "foundation",
-            [f"aws_region={args.region}", f"name_prefix={args.project_name}"],
-        )
-        subprocess.run(
-            ["tofu", "-chdir=infra/foundation", "destroy", "-input=false", "-auto-approve"],
-            cwd=checkout, check=True,
-        )
-        self._ssm_delete(f"{self.install_ssm_prefix}/config0_outputs")
 
     def destroy_token(self):
         self._ssm_delete(os.environ["CLONE_TOKEN_SSM_PATH"])
