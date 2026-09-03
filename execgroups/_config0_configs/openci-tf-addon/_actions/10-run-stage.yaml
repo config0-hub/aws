@@ -1,2 +1,6 @@
 scripts:
 - config0-hub:::aws::openci-tf-addon-stage
+# In-Lambda shellout that writes the target account (clone-token SSM,
+# registration) - runs on the order's target session, not the engine session.
+aws_identity:
+- target
