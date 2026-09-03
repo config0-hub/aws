@@ -106,7 +106,6 @@ class Main(newSchedStack):
         # Default = what openci-tf's own docker/Dockerfile.test pins.
         self.parse.add_optional(key="tofu_version", types="str", default="1.12.6")
         self.parse.add_optional(key="cloud_tags_hash", default='null')
-        self.parse.add_optional(key="stateful_id", default="_random")
         self.parse.add_optional(key="share_dir", default="/var/tmp/share")
 
         # declare execution groups
@@ -122,16 +121,11 @@ class Main(newSchedStack):
     def _init_common(self):
         """Derive the values every stage shares."""
         import hashlib
-        import os
         import re
 
         if not self.stack.remote_stateful_bucket:
             self.stack.set_variable("remote_stateful_bucket",
                                     self.stack.bucket_names["stateful"])
-
-        self.stack.set_variable("run_share_dir",
-                                os.path.join(self.stack.share_dir,
-                                             self.stack.stateful_id))
 
         gh_owner, gh_repo = self.stack.repo.split("/", 1)
 
@@ -155,6 +149,32 @@ class Main(newSchedStack):
         # the same recipe the config0_cli addon-record builder applies.
         self.stack.set_variable("addon_resource_id",
                                 hashlib.md5(b"addon:openci_tf").hexdigest())
+
+    def _stage_stateful_id(self, stage):
+        """The CodeBuild stage's own execution identity.
+
+        STATEFUL_ID is the engine execution id (the AWSExecutor tracking slot,
+        the share dir, the resource/phases JSON the CLI finalizer reads). The
+        ecr, image-copy and deploy stages are distinct orders and MUST NOT
+        share one: the removal run williaumwu_53af1268 handed the ecr destroy
+        the deploy stage's id, AWSExecutor answered "existing run in progress"
+        for the deploy execution, no ecr CodeBuild ever ran, and the CLI read
+        the deploy stage's leftover resource JSON as the ecr evidence - the
+        ECR repository leaked while the run wrote REMOVED (defect 24).
+
+        Derived from the durable placement identity plus the stage, the same
+        way config0_publisher's _derive_stateful_id seeds a TFConstructor
+        order: a retry re-derives the same id per stage (retry convergence),
+        every stage derives a different one, and openci_tf_destroy re-derives
+        the install's id for the matching stage (byte-identical recipe there).
+        """
+        import hashlib
+
+        seed = (
+            f"openci-tf:{self.stack.owner_id}:{self.stack.repo}:"
+            f"{self.stack.install_name}:{self.stack.aws_default_region}:{stage}"
+        )
+        return hashlib.md5(seed.encode()).hexdigest()[:16]
 
     def _stage_env_vars(self, stage):
         """The engine-side environment one openci-tf-addon stage order carries."""
@@ -204,18 +224,22 @@ class Main(newSchedStack):
         pinned tofu itself. The stage inputs ride the SOPS-sealed build env.
         """
         import json
+        import os
+
+        stateful_id = self._stage_stateful_id(stage)
+        run_share_dir = os.path.join(self.stack.share_dir, stateful_id)
 
         build_envs = self._stage_env_vars(stage)
         build_envs.update({
             "METHOD": "destroy" if self._destroying() else "create",
             "TOFU_VERSION": self.stack.tofu_version,
-            "STATEFUL_ID": self.stack.stateful_id,
+            "STATEFUL_ID": stateful_id,
             "TMP_BUCKET": self.stack.tmp_bucket,
             "SHARE_DIR": self.stack.share_dir,
             "WORKING_SUBDIR": "var/tmp/openci-tf",
-            "RUN_SHARE_DIR": self.stack.run_share_dir,
-            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
-            "WORKING_DIR": self.stack.run_share_dir,
+            "RUN_SHARE_DIR": run_share_dir,
+            "CHROOTFILES_DEST_DIR": run_share_dir,
+            "WORKING_DIR": run_share_dir,
             "CODEBUILD_COMPUTE_TYPE": self.stack.compute_type,
             "SCRIPT_NAME": "openci-tf-addon-tofu.py",
             "BUILD_TIMEOUT": build_timeout,
@@ -226,9 +250,9 @@ class Main(newSchedStack):
             "CODEBUILD_PARAMS_HASH": self.stack.serialize({
                 "env_vars": build_envs,
                 "build_env_vars": build_envs}, json=False),
-            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
+            "CHROOTFILES_DEST_DIR": run_share_dir,
             "AWS_DEFAULT_REGION": self.stack.aws_default_region,
-            "WORKING_DIR": self.stack.run_share_dir,
+            "WORKING_DIR": run_share_dir,
             "APP_NAME": "openci-tf",
             "APP_DIR": "var/tmp/openci-tf"
         }
@@ -291,17 +315,20 @@ class Main(newSchedStack):
         self.stack.verify_variables()
         self._init_common()
 
+        stateful_id = self._stage_stateful_id("image-copy")
+        run_share_dir = os.path.join(self.stack.share_dir, stateful_id)
+
         build_envs = {
             "GHCR_IMAGE": self.stack.ghcr_image,
             "ECR_IMAGE_TAG": self.stack.image_tag,
             "OPENCI_TF_PROJECT": self.stack.openci_tf_project,
-            "STATEFUL_ID": self.stack.stateful_id,
+            "STATEFUL_ID": stateful_id,
             "TMP_BUCKET": self.stack.tmp_bucket,
             "SHARE_DIR": self.stack.share_dir,
             "WORKING_SUBDIR": "var/tmp/docker",
-            "RUN_SHARE_DIR": self.stack.run_share_dir,
-            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
-            "WORKING_DIR": self.stack.run_share_dir,
+            "RUN_SHARE_DIR": run_share_dir,
+            "CHROOTFILES_DEST_DIR": run_share_dir,
+            "WORKING_DIR": run_share_dir,
             "BUILD_IMAGE": "aws/codebuild/standard:7.0",
             "CODEBUILD_COMPUTE_TYPE": self.stack.compute_type,
             "SCRIPT_NAME": "copy-ghcr-to-ecr.sh",
@@ -320,9 +347,9 @@ class Main(newSchedStack):
             "CODEBUILD_PARAMS_HASH": self.stack.serialize({
                 "env_vars": build_envs,
                 "build_env_vars": build_envs}, json=False),
-            "CHROOTFILES_DEST_DIR": self.stack.run_share_dir,
+            "CHROOTFILES_DEST_DIR": run_share_dir,
             "AWS_DEFAULT_REGION": self.stack.aws_default_region,
-            "WORKING_DIR": self.stack.run_share_dir,
+            "WORKING_DIR": run_share_dir,
             "APP_NAME": "docker",
             "APP_DIR": "var/tmp/docker"
         }

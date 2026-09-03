@@ -21,15 +21,11 @@ def _init_common(stack):
     openci_tf_install._init_common (the clone-token path and trigger id MUST
     resolve to the names the install wrote)."""
     import hashlib
-    import os
     import re
 
     if not stack.remote_stateful_bucket:
         stack.set_variable("remote_stateful_bucket",
                            stack.bucket_names["stateful"])
-
-    stack.set_variable("run_share_dir",
-                       os.path.join(stack.share_dir, stack.stateful_id))
 
     gh_owner, gh_repo = stack.repo.split("/", 1)
 
@@ -46,6 +42,22 @@ def _init_common(stack):
             hashlib.sha256(
                 f"openci-tf-trigger:{stack.owner_id}/{stack.repo}".encode()
             ).hexdigest()[:16])
+
+
+def _stage_stateful_id(stack, stage):
+    """The CodeBuild stage's own execution identity - byte-identical to
+    openci_tf_install._stage_stateful_id, so each destroy stage lands on the
+    execution slot, share dir and evidence files of the install stage it
+    reverses, and never on another stage's (defect 24: the ecr destroy reused
+    the deploy stage's id, hit its "existing run in progress", never ran, and
+    passed on the deploy stage's leftover evidence)."""
+    import hashlib
+
+    seed = (
+        f"openci-tf:{stack.owner_id}:{stack.repo}:"
+        f"{stack.install_name}:{stack.aws_default_region}:{stage}"
+    )
+    return hashlib.md5(seed.encode()).hexdigest()[:16]
 
 
 def _stage_env_vars(stack, stage):
@@ -91,17 +103,21 @@ def _insert_tofu_stage(stack, stage, build_timeout, human_description):
     (same codebuild-srcfile framing as the install; the script prints the
     CONFIG0_DESTROY_*_STATE_COUNT evidence the CLI finalizer reads)."""
     import json
+    import os
+
+    stateful_id = _stage_stateful_id(stack, stage)
+    run_share_dir = os.path.join(stack.share_dir, stateful_id)
 
     build_envs = _stage_env_vars(stack, stage)
     build_envs.update({
         "TOFU_VERSION": stack.tofu_version,
-        "STATEFUL_ID": stack.stateful_id,
+        "STATEFUL_ID": stateful_id,
         "TMP_BUCKET": stack.tmp_bucket,
         "SHARE_DIR": stack.share_dir,
         "WORKING_SUBDIR": "var/tmp/openci-tf",
-        "RUN_SHARE_DIR": stack.run_share_dir,
-        "CHROOTFILES_DEST_DIR": stack.run_share_dir,
-        "WORKING_DIR": stack.run_share_dir,
+        "RUN_SHARE_DIR": run_share_dir,
+        "CHROOTFILES_DEST_DIR": run_share_dir,
+        "WORKING_DIR": run_share_dir,
         "CODEBUILD_COMPUTE_TYPE": stack.compute_type,
         "SCRIPT_NAME": "openci-tf-addon-tofu.py",
         "BUILD_TIMEOUT": build_timeout,
@@ -112,9 +128,9 @@ def _insert_tofu_stage(stack, stage, build_timeout, human_description):
         "CODEBUILD_PARAMS_HASH": stack.serialize({
             "env_vars": build_envs,
             "build_env_vars": build_envs}, json=False),
-        "CHROOTFILES_DEST_DIR": stack.run_share_dir,
+        "CHROOTFILES_DEST_DIR": run_share_dir,
         "AWS_DEFAULT_REGION": stack.aws_default_region,
-        "WORKING_DIR": stack.run_share_dir,
+        "WORKING_DIR": run_share_dir,
         "APP_NAME": "openci-tf",
         "APP_DIR": "var/tmp/openci-tf"
     }
@@ -135,19 +151,23 @@ def _insert_image_copy(stack):
     """The CodeBuild image-copy order with METHOD=destroy (copy-ghcr-to-ecr.sh
     deletes the pushed tag and prints the destroy evidence markers)."""
     import json
+    import os
+
+    stateful_id = _stage_stateful_id(stack, "image-copy")
+    run_share_dir = os.path.join(stack.share_dir, stateful_id)
 
     build_envs = {
         "METHOD": "destroy",
         "GHCR_IMAGE": stack.ghcr_image,
         "ECR_IMAGE_TAG": stack.image_tag,
         "OPENCI_TF_PROJECT": stack.openci_tf_project,
-        "STATEFUL_ID": stack.stateful_id,
+        "STATEFUL_ID": stateful_id,
         "TMP_BUCKET": stack.tmp_bucket,
         "SHARE_DIR": stack.share_dir,
         "WORKING_SUBDIR": "var/tmp/docker",
-        "RUN_SHARE_DIR": stack.run_share_dir,
-        "CHROOTFILES_DEST_DIR": stack.run_share_dir,
-        "WORKING_DIR": stack.run_share_dir,
+        "RUN_SHARE_DIR": run_share_dir,
+        "CHROOTFILES_DEST_DIR": run_share_dir,
+        "WORKING_DIR": run_share_dir,
         "BUILD_IMAGE": "aws/codebuild/standard:7.0",
         "CODEBUILD_COMPUTE_TYPE": stack.compute_type,
         "SCRIPT_NAME": "copy-ghcr-to-ecr.sh",
@@ -161,9 +181,9 @@ def _insert_image_copy(stack):
         "CODEBUILD_PARAMS_HASH": stack.serialize({
             "env_vars": build_envs,
             "build_env_vars": build_envs}, json=False),
-        "CHROOTFILES_DEST_DIR": stack.run_share_dir,
+        "CHROOTFILES_DEST_DIR": run_share_dir,
         "AWS_DEFAULT_REGION": stack.aws_default_region,
-        "WORKING_DIR": stack.run_share_dir,
+        "WORKING_DIR": run_share_dir,
         "APP_NAME": "docker",
         "APP_DIR": "var/tmp/docker"
     }
@@ -261,7 +281,6 @@ def run(stackargs):
     stack.parse.add_optional(key="build_timeout", types="int", default=1200)
     stack.parse.add_optional(key="tofu_version", types="str", default="1.12.6")
     stack.parse.add_optional(key="cloud_tags_hash", default='null')
-    stack.parse.add_optional(key="stateful_id", default="_random")
     stack.parse.add_optional(key="share_dir", default="/var/tmp/share")
 
     stack.add_execgroup("config0-hub:::aws::openci-tf-addon", "addon_execgroup")
