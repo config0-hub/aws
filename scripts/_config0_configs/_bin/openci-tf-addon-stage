@@ -289,6 +289,13 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             "webhook_hook_id": hook_id,
             "clone_token_ssm_path": os.environ["CLONE_TOKEN_SSM_PATH"],
             "region": self.region,
+            # Convergent producer: an install re-POST over an INSTALLED add-on
+            # must land on the SAME deterministic _id with the new attempt_id
+            # (one addon record per account). The execgroup write-back guard
+            # (config0_cli _record_resource must_be_zero) would refuse the prior
+            # COMPLETED install's confirmed row; `overide` declares this write
+            # as the upsert it is. The CLI strips the flag before the PUT.
+            "overide": True,
         }
         resource.update(outputs)
         insert_resource_id(resource)
