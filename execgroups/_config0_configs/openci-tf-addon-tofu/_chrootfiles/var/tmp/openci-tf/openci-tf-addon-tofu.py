@@ -30,10 +30,18 @@
 # destroy deploy tofu destroy of every non-ECR deploy module, then foundation;
 #                the recorded outputs parameter is deleted
 #
-# A destroy prints the CONFIG0_DESTROY_PRE/POST_STATE_COUNT=0 markers the CLI's
-# execgroup destroy finalizer reads from the engine ExecutionResult: these
-# stages own no generic resource row, so a successful teardown IS the
-# zero-remaining evidence.
+# A destroy prints the CONFIG0_DESTROY_PRE/POST_STATE_COUNT markers the CLI's
+# execgroup destroy finalizer reads from the engine ExecutionResult: the
+# counts are `tofu state list` before and after, scoped to the modules this
+# stage owns, summed over the roots it destroys. A root whose owned modules
+# are already gone (a re-fired order after a prior attempt's teardown) is
+# skipped, not destroyed again: infra/deploy's data sources read the
+# foundation buckets and KMS alias, so a second `tofu destroy` there fails at
+# refresh once the foundation is gone (CodeBuild 698cb532, 17 s).
+#
+# Every tofu call here passes -no-color and the markers follow a newline
+# flush: tofu's colored output ends with its ANSI reset AFTER the final
+# newline, which put the PRE marker mid-line and the finalizer read "found 0".
 # ---------------------------------------------------------------------------
 import json
 import os
@@ -128,7 +136,7 @@ def create(stage, source):
     import boto3
 
     completed = subprocess.run(
-        ["tofu", "-chdir=infra/deploy", "output", "-json"],
+        ["tofu", "-chdir=infra/deploy", "output", "-json", "-no-color"],
         cwd=source, check=True, capture_output=True, text=True,
     )
     outputs = {
@@ -140,6 +148,50 @@ def create(stage, source):
         Name=_outputs_param(), Value=json.dumps(outputs), Type="String", Overwrite=True,
     )
     print(f"deploy outputs recorded to {_outputs_param()}", flush=True)
+
+
+def state_addresses(source, root):
+    """The managed resource addresses in one root's state (empty when none)."""
+    completed = subprocess.run(
+        ["tofu", f"-chdir={root}", "state", "list", "-no-color"],
+        cwd=source, check=True, capture_output=True, text=True,
+    )
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def owned(addresses, targets):
+    """The addresses under the targeted modules (all of them when targets is None)."""
+    if targets is None:
+        return list(addresses)
+    return [
+        address for address in addresses
+        if any(address == t or address.startswith((f"{t}.", f"{t}[")) for t in targets)
+    ]
+
+
+def destroy_root(source, root, targets=None):
+    """tofu destroy of the targeted modules (or the whole root); returns the
+    (pre, post) counts of owned addresses in state. Nothing owned in state
+    means a prior attempt already tore it down: skip the destroy so the run
+    converges instead of failing on refresh."""
+    pre = owned(state_addresses(source, root), targets)
+    if not pre:
+        print(f"{root}: nothing owned by this stage left in state; destroy skipped", flush=True)
+        return 0, 0
+    subprocess.run(
+        ["tofu", f"-chdir={root}", "destroy", "-no-color", "-input=false", "-auto-approve",
+         *[arg for target in targets or () for arg in ("-target", target)]],
+        cwd=source, check=True,
+    )
+    post = owned(state_addresses(source, root), targets)
+    return len(pre), len(post)
+
+
+def print_destroy_markers(pre, post):
+    """Line-anchor the markers regardless of how the previous tool ended its output."""
+    sys.stdout.write("\n")
+    print(f"CONFIG0_DESTROY_PRE_STATE_COUNT={pre}")
+    print(f"CONFIG0_DESTROY_POST_STATE_COUNT={post}", flush=True)
 
 
 def destroy(stage, source):
@@ -160,20 +212,14 @@ def destroy(stage, source):
             "module.run_folder_destroy",
             "module.openci_tf",
         )
-    subprocess.run(
-        ["tofu", "-chdir=infra/deploy", "destroy", "-input=false", "-auto-approve",
-         *[arg for target in targets for arg in ("-target", target)]],
-        cwd=source, check=True,
-    )
+    pre, post = destroy_root(source, "infra/deploy", targets)
     if stage == "deploy":
         addon.prepare_root(
             args, "infra/foundation", "foundation",
             [f"aws_region={args.region}", f"name_prefix={args.project_name}"],
         )
-        subprocess.run(
-            ["tofu", "-chdir=infra/foundation", "destroy", "-input=false", "-auto-approve"],
-            cwd=source, check=True,
-        )
+        foundation_pre, foundation_post = destroy_root(source, "infra/foundation")
+        pre, post = pre + foundation_pre, post + foundation_post
         import boto3
 
         ssm = boto3.client("ssm", region_name=env("OPENCI_TF_REGION"))
@@ -181,8 +227,7 @@ def destroy(stage, source):
             ssm.delete_parameter(Name=_outputs_param())
         except ssm.exceptions.ParameterNotFound:
             print(f"SSM parameter {_outputs_param()} already absent", flush=True)
-    print("CONFIG0_DESTROY_PRE_STATE_COUNT=0", flush=True)
-    print("CONFIG0_DESTROY_POST_STATE_COUNT=0", flush=True)
+    print_destroy_markers(pre, post)
 
 
 def main():
