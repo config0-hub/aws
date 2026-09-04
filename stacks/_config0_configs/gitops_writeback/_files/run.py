@@ -42,11 +42,14 @@ class Main(newSchedStack):
     def __init__(self, stackargs):
         newSchedStack.__init__(self, stackargs)
 
-        # The target project's identity, FROZEN at its first dispatch —
+        # The SOURCE project's identity, FROZEN at its first dispatch —
         # saas-api passes it from the project_config row's data.gitops.
-        self.parse.add_required(key="project_id", types="str")
-        # Not "project_name": that is a Stack built-in (the cluster alias)
-        # and the runtime refuses declared keys that shadow one.
+        # Not "project_id" / "project_name": both are Stack built-ins bound to
+        # the DISPATCH project (the internal c0-writeback-<name> project this
+        # stack runs under) and the runtime refuses declared keys that shadow
+        # one. Under the built-in name the frontier check targeted the
+        # dispatch project and could never see itself completed (defect 34).
+        self.parse.add_required(key="gitops_project_id", types="str")
         self.parse.add_required(key="gitops_project_name", types="str")
         self.parse.add_required(key="owner_id", types="str")
         self.parse.add_required(key="repo_owner", types="str")   # GitHub owner
@@ -70,7 +73,7 @@ class Main(newSchedStack):
         # config0_cli record builder applies (md5("pipeline:" + project_id)).
         self.stack.set_variable(
             "pipeline_resource_id",
-            hashlib.md5(f"pipeline:{self.stack.project_id}".encode()).hexdigest())
+            hashlib.md5(f"pipeline:{self.stack.gitops_project_id}".encode()).hexdigest())
 
     def _notify(self, status, error=None):
         """Emit the gitops status-producer order (`config0 gitops notify`)."""
@@ -81,7 +84,7 @@ class Main(newSchedStack):
             f"workflow_id={self.stack.workflow_id}",
             f"owner={self.stack.owner_id}",
             "kind=run_result",
-            f"key=writeback:{self.stack.project_id}",
+            f"key=writeback:{self.stack.gitops_project_id}",
             f"attempt_id={self.stack.attempt_id}",
             f"status={status}",
             f"resource_id={self.stack.pipeline_resource_id}",
@@ -104,7 +107,7 @@ class Main(newSchedStack):
 
         parts = [
             "config0", "gitops", "writeback",
-            f"project_id={self.stack.project_id}",
+            f"project_id={self.stack.gitops_project_id}",
             f"project_name={self.stack.gitops_project_name}",
             f"owner_id={self.stack.owner_id}",
             f"repo_owner={self.stack.repo_owner}",

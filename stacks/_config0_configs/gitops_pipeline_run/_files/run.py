@@ -48,11 +48,12 @@ class Main(newSchedStack):
     def __init__(self, stackargs):
         newSchedStack.__init__(self, stackargs)
 
-        # The run's identity — saas-api resolves it at dispatch and writes the
-        # pipeline_run record before placing this order.
-        self.parse.add_required(key="project_id", types="str")
-        # Not "project_name": that is a Stack built-in (the cluster alias)
-        # and the runtime refuses declared keys that shadow one.
+        # The SOURCE project's identity — saas-api resolves it at dispatch and
+        # writes the pipeline_run record before placing this order.
+        # Not "project_id" / "project_name": both are Stack built-ins bound to
+        # the DISPATCH project (the internal project this stack runs under)
+        # and the runtime refuses declared keys that shadow one (defect 34).
+        self.parse.add_required(key="gitops_project_id", types="str")
         self.parse.add_required(key="gitops_project_name", types="str")
         self.parse.add_required(key="owner_id", types="str")
         self.parse.add_required(key="action", types="str",
@@ -77,7 +78,7 @@ class Main(newSchedStack):
         self.stack.set_variable(
             "run_resource_id",
             hashlib.md5(
-                f"pipeline_run:{self.stack.project_id}:{self.stack.request_id}"
+                f"pipeline_run:{self.stack.gitops_project_id}:{self.stack.request_id}"
                 .encode()).hexdigest())
 
     def _notify(self, status, error=None):
@@ -89,7 +90,7 @@ class Main(newSchedStack):
             f"workflow_id={self.stack.workflow_id}",
             f"owner={self.stack.owner_id}",
             "kind=run_result",
-            f"key=pipeline_run:{self.stack.project_id}:{self.stack.request_id}",
+            f"key=pipeline_run:{self.stack.gitops_project_id}:{self.stack.request_id}",
             f"attempt_id={self.stack.attempt_id}",
             f"status={status}",
             f"resource_id={self.stack.run_resource_id}",
@@ -112,7 +113,7 @@ class Main(newSchedStack):
 
         parts = [
             "config0", "gitops", "pipeline-run",
-            f"project_id={self.stack.project_id}",
+            f"project_id={self.stack.gitops_project_id}",
             f"project_name={self.stack.gitops_project_name}",
             f"owner_id={self.stack.owner_id}",
             f"action={self.stack.action}",
