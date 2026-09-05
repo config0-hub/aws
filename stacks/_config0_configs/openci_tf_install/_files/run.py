@@ -463,6 +463,14 @@ class Main(newSchedStack):
         # pipelines — the verb states that and exits 0). Orders in one job run
         # sequentially, so this always follows the record stage. Skipped on the
         # destroy chain (the settings table is about to go).
+        #
+        # role: the verb writes openci-tf-settings in the run's target account,
+        # exactly what the write-back's register_state_pairs does. The worker
+        # runs gitops/tenant/execute under the target session
+        # (config0-executor-remote; config0-worker executor.go engineBoundRole);
+        # the default external/cli/execute role runs under the worker Lambda's
+        # ambient config0-worker-coordinator-exec role, which has no DynamoDB
+        # grant on that table (defect 47, run williaumwu_9cc4580700f34bd2a075dda13429c793).
         parts = [
             "config0", "gitops", "reregister",
             f"repo={self.stack.repo}",
@@ -470,6 +478,7 @@ class Main(newSchedStack):
         ]
         self.stack.add_external_cmd(
             cmd=" ".join(shlex.quote(part) for part in parts),
+            role="gitops/tenant/execute",
             human_description="openci-tf addon: re-register pipeline state pairs",
             display=True,
         )
