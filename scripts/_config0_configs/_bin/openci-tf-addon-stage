@@ -324,20 +324,33 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         return rows
 
     def _pipeline_pr_numbers(self, repo):
+        # The write-back PR is recorded on the repo's pipeline row; the dedicated
+        # mutation PRs are recorded on pipeline_run rows. Enumerate the latter by
+        # this install's TRIGGER_ID - stamped on every pipeline_run row by the
+        # saas-api dispatcher (build_pipeline_run_values) - NOT by a project_id
+        # derived from surviving pipeline rows: that derivation missed every
+        # mutation PR when the project was removed before the add-on and no
+        # pipeline row remained (defect 44).
+        #
+        # This covers the add-on-first ordering, where the pipeline and
+        # pipeline_run rows are still present. In the project-first ordering both
+        # carriers are already gone by the time this stage runs: `config0 project
+        # delete` deletes the pipeline row, and run_complete's completed-destroy
+        # sweep deletes EVERY resource row with data.project_id = the project,
+        # pipeline_run rows included (config0-qhost routes/schedules/crud.py,
+        # DELETE ... WHERE data->>'project_id' = %s). That ordering closes these
+        # PRs at the config0_cli layer instead (handlers/project.py
+        # _close_gitops_prs), while the add-on's clone token still exists.
+        trigger_id = os.environ["TRIGGER_ID"]
         pipelines = [
             row.get("data") or {}
             for row in self._qhost_resources("pipeline")
             if (row.get("data") or {}).get("repo") == repo
         ]
-        project_ids = {
-            str(data["project_id"])
-            for data in pipelines
-            if data.get("project_id")
-        }
         pipeline_runs = [
             row.get("data") or {}
             for row in self._qhost_resources("pipeline_run")
-            if str((row.get("data") or {}).get("project_id") or "") in project_ids
+            if str((row.get("data") or {}).get("trigger_id") or "") == trigger_id
         ]
         return {
             int(data["pr_number"])
