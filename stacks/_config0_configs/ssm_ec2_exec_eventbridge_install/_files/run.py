@@ -376,7 +376,9 @@ class Main(newSchedStack):
         """Remove the typed addon row after a SUCCESSFUL destroy — idempotent
         (a repeated destroy finds no row and deletes nothing)."""
         rows = self.stack.get_resource(
-            resource_type="addon", match={"_id": self._addon_resource_id()}
+            resource_type="addon",
+            match={"_id": self._addon_resource_id()},
+            overlay_tfstate=False,
         )
         if rows:
             self.stack.unrecord_resource(_id=self._addon_resource_id())

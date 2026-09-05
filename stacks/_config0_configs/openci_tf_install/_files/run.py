@@ -436,7 +436,10 @@ class Main(newSchedStack):
         self._init_common()
 
         if self._destroying():
-            rows = self.stack.get_resource(match={"_id": self.stack.addon_resource_id})
+            rows = self.stack.get_resource(
+                match={"_id": self.stack.addon_resource_id},
+                overlay_tfstate=False,
+            )
             if rows:
                 self.stack.unrecord_resource(_id=self.stack.addon_resource_id)
             else:
