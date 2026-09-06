@@ -49,7 +49,12 @@ def run(stackargs):
                        resource_name="ssm_ec2_exec",
                        resource_type="ssm_ec2_exec_install")
 
-    tf.include(values={"aws_region": stack.aws_region})
+    # Surface the region on the db/values channel as the canonical
+    # `aws_default_region` (not `aws_region`): that is the key the ONE state-key
+    # derivation reads for the <region> segment (config0_publisher
+    # terraform._get_runtime_env_vars). TF_VAR_aws_region for the vendored
+    # terraform still comes from the tfvar-tagged parse.add_optional above.
+    tf.include(values={"aws_default_region": stack.aws_region})
 
     # resource output to show on saas ui
     tf.output(keys=["state_machine_arn", "bucket_name", "instance_profile_name"])

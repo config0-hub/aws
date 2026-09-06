@@ -35,9 +35,15 @@ class Main(newSchedStack):
                      through `config0 gitops notify`; every stage reaches the
                      failure notifier through on_failure
 
-    Destroy walks the on_delete graph through registration, deploy, image,
-    ECR, and record teardown with the token deleted LAST, then notify_success
-    reports the removal.
+    Every thing a stage creates is a resource row of a specific resource_type
+    stamped with the add-on identity ``addon_id`` (= the addon record's _id)
+    plus the run identity (user rule 2026-09-06: cleanup by identity query).
+    The three CodeBuild-created things (ECR repository, copied image, tofu
+    deploy) are recorded HERE, inline, when their job builds - before the
+    CodeBuild order fires - so a partial install is never invisible to the
+    removal query. The Lambda-side stages record their own rows in the stage
+    script. Removal (openci_tf_destroy) queries the rows by addon_id and
+    deletes each type with its own deleter, token last.
     """
 
     def __init__(self, stackargs):
@@ -146,9 +152,36 @@ class Main(newSchedStack):
                 ).hexdigest()[:16])
 
         # Deterministic addon-record id (one openci-tf install per account) —
-        # the same recipe the config0_cli addon-record builder applies.
+        # the same recipe the config0_cli addon-record builder applies. It is
+        # ALSO the addon_id stamped on every row the install creates.
         self.stack.set_variable("addon_resource_id",
                                 hashlib.md5(b"addon:openci_tf").hexdigest())
+
+    def _record_addon_row(self, resource_type, key, name, **fields):
+        """Record one typed add-on resource row inline (idempotent upsert).
+
+        ``_id = md5("addon_resource:" + addon_id + ":" + resource_type + ":" +
+        key)`` - byte-identical to config0_cli.gitops.records
+        addon_resource_record_id and the openci-tf-addon-stage script (pinned
+        by pkg-config0-cli:parity). record_resource stamps project_id /
+        schedule_id / run_id from the stack context.
+        """
+        import hashlib
+
+        addon_id = self.stack.addon_resource_id
+        values = {
+            "_id": hashlib.md5(
+                f"addon_resource:{addon_id}:{resource_type}:{key}".encode()
+            ).hexdigest(),
+            "resource_type": resource_type,
+            "addon_id": addon_id,
+            "addon": "openci_tf",
+            "name": name,
+            "provider": "openci-tf",
+            "region": self.stack.aws_default_region,
+        }
+        values.update(fields)
+        self.stack.record_resource(values=values)
 
     def _stage_stateful_id(self, stage):
         """The CodeBuild stage's own execution identity.
@@ -190,6 +223,7 @@ class Main(newSchedStack):
             "GITOPS_REPO": self.stack.repo,
             "ACCOUNT_ALIAS": self.stack.account_alias,
             "CLONE_TOKEN_SSM_PATH": self.stack.clone_token_ssm_path,
+            "ADDON_ID": self.stack.addon_resource_id,
             # ALWAYS forwarded (required argument): an empty caller policy
             # would refuse every day-2 plan|drift|report call.
             "API_CALLER_ROLE_ARNS": self.stack.api_caller_role_arns,
@@ -297,6 +331,12 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
+        if not self._destroying():
+            self._record_addon_row(
+                "ecr_repository", self.stack.openci_tf_project,
+                f"ECR repository {self.stack.openci_tf_project}",
+                repository_name=self.stack.openci_tf_project,
+            )
         self._insert_tofu_stage(
             "ecr", 900,
             human_description=(
@@ -317,6 +357,14 @@ class Main(newSchedStack):
 
         stateful_id = self._stage_stateful_id("image-copy")
         run_share_dir = os.path.join(self.stack.share_dir, stateful_id)
+
+        if not self._destroying():
+            self._record_addon_row(
+                "ecr_image", f"{self.stack.openci_tf_project}:{self.stack.image_tag}",
+                f"ECR image {self.stack.openci_tf_project}:{self.stack.image_tag}",
+                repository_name=self.stack.openci_tf_project,
+                image_tag=self.stack.image_tag,
+            )
 
         build_envs = {
             "GHCR_IMAGE": self.stack.ghcr_image,
@@ -371,6 +419,23 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
+        if not self._destroying():
+            # The tofu roots (infra/foundation, infra/deploy) keep their state
+            # under openci-tf's OWN backend in the tenant state bucket; this
+            # row is not a config0 state-backed row (no stateful_id /
+            # remote_stateful_bucket pointer, so the read overlay never tries
+            # to read it). Its deleter is the tofu deploy stage with
+            # METHOD=destroy; the outputs parameter is the absence evidence.
+            self._record_addon_row(
+                "openci_tf_deploy", self.stack.openci_tf_project,
+                f"openci-tf deploy {self.stack.openci_tf_project}",
+                openci_tf_project=self.stack.openci_tf_project,
+                state_bucket=self.stack.remote_stateful_bucket,
+                state_roots=["infra/foundation", "infra/deploy"],
+                outputs_ssm_path=(
+                    f"/openci-tf/install/{self.stack.openci_tf_project}/config0_outputs"
+                ),
+            )
         self._insert_tofu_stage(
             "deploy", 2400,
             human_description=(

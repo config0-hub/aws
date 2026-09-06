@@ -12,23 +12,39 @@ that. The tofu stages (ecr, deploy, and their destroys) run openci-tf's own
 installer in the engine's CodeBuild through the openci-tf-addon-tofu execgroup
 (_chrootfiles/var/tmp/openci-tf/openci-tf-addon-tofu.py).
 
+Every thing a stage creates is recorded as ONE resource row of a specific
+resource_type, stamped with the add-on identity ``addon_id`` (the parent
+``addon`` record's _id, md5("addon:openci_tf")) plus the install run's
+project_id / schedule_id / run_id (user rule 2026-09-06: cleanup by identity
+query). Removal never reads a saved field list to decide WHAT to delete: each
+destroy stage QUERIES the rows of its resource_type by addon_id and deletes the
+row once its thing is torn down - by this stage's own API call, or by the
+CodeBuild destroy order that ran (and had to succeed) right before it. A row
+whose thing is already gone converges (the row is deleted, nothing else).
+
 Stages (create):
     token     the GitHub clone token (encrypted run environment, never order
               params) is written to SSM /openci-tf/clone-token/<name> as a
-              SecureString
+              SecureString; row: ssm_parameter (purpose=clone_token)
     register  install/register_repo.py from the pinned openci-tf source
               (empty-repo initialization, webhook secret, repo plus hub-alias
-              settings, webhook create/reconcile; hook_id recorded in SSM)
-    record    the addon resource record (deploy outputs + registration values
-              + attempt_id) is written through the resource JSON channel
+              settings, webhook create/reconcile; hook_id recorded in SSM);
+              rows: github_webhook, settings_item (repo + account), and one
+              ssm_parameter per install-namespace parameter register_repo.py
+              wrote (webhook_secret, webhook_hook_id)
+    record    the parent addon record (deploy outputs + registration values +
+              attempt_id + addon_id) through the resource JSON channel
 
-Stages (destroy) - the stack's on_delete graph removes each matching create
-stage's resources, deletes the token as the last external side effect, then
-deletes the typed record:
-    register  close recorded write-back/mutation PRs, delete the webhook and
-              registration settings; a provably unregistered partial install
-              can continue without a token
-    token     delete the SSM clone-token parameter
+Stages (destroy), placed by openci_tf_destroy in the contract order
+(registration, deploy, image, ECR repository, SSM parameters LAST):
+    register            github_webhook rows: close recorded write-back /
+                        mutation PRs, delete each webhook; settings_item
+                        rows: delete each item
+    openci_tf_deploy    the tofu deploy / image-copy / ecr CodeBuild destroy
+    ecr_image           order already ran (and had to succeed) before this
+    ecr_repository      Lambda order: delete the rows
+    token               ssm_parameter rows: delete each parameter (the clone
+                        token among them, the last external side effect)
 
 The pinned openci-tf source (OPENCI_TF_REPO_URL at OPENCI_TF_GIT_REF, a full
 commit sha) is fetched as GitHub's archive tarball over HTTPS and verified
@@ -62,6 +78,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import urllib.parse
 from urllib.parse import urlparse
 import urllib.request
 
@@ -72,8 +89,38 @@ from config0_publisher.loggerly import Config0Logger
 from config0_publisher.resource.manage import ResourceCmdHelper
 from config0_publisher.resource.manage_output import insert_resource_id
 from config0_publisher.tmpdir import OnDiskTmpDir
+from config0_stack_runtime import stamp_run_identity
 
-STAGES = ("token", "register", "record")
+STAGES = (
+    "token", "register", "record",
+    "openci_tf_deploy", "ecr_image", "ecr_repository",
+)
+
+# Byte-identical to config0_cli.gitops.records (ADDON_RESOURCE_TYPES,
+# addon_resource_record_id) - pinned by pkg-config0-cli:parity + its test.
+ADDON = "openci_tf"
+ADDON_ID = hashlib.md5(b"addon:openci_tf").hexdigest()
+ADDON_RESOURCE_TYPES = (
+    "github_webhook",
+    "settings_item",
+    "openci_tf_deploy",
+    "ecr_image",
+    "ecr_repository",
+    "ssm_parameter",
+)
+
+
+def addon_resource_record_id(addon_id, resource_type, key):
+    """``md5("addon_resource:" + addon_id + ":" + resource_type + ":" + key)``."""
+    if not addon_id or not key:
+        raise ValueError("addon_resource_record_id needs addon_id and key")
+    if resource_type not in ADDON_RESOURCE_TYPES:
+        raise ValueError(
+            f"addon resource_type {resource_type!r} is not one of {ADDON_RESOURCE_TYPES}"
+        )
+    return hashlib.md5(
+        f"addon_resource:{addon_id}:{resource_type}:{key}".encode()
+    ).hexdigest()
 
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -206,6 +253,80 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             )
         return value
 
+    # -- add-on resource rows -----------------------------------------------
+
+    def _qhost(self):
+        return (
+            os.environ["QHOST_URL"].rstrip("/"),
+            {"Authorization": f"Bearer {os.environ['QHOST_JWT_TOKEN']}"},
+        )
+
+    def _put_row(self, resource_type, key, name, **fields):
+        """Write one typed add-on resource row (idempotent QHost upsert).
+
+        Stamped with addon_id and the run identity (project_id / schedule_id /
+        run_id from the worker-exported run environment - the QHost run-context
+        write guard rejects a run write without them).
+
+        No region: every row this method writes (ssm_parameter, github_webhook,
+        settings_item) is a region-less thing, so it does not stamp the Lambda's
+        region (user decision 2026-09-06: region is NOT required on a resource
+        row). The parent addon record carries region; those region-ful rows are
+        written by create_record / the install stack, not here.
+        """
+        values = {
+            "_id": addon_resource_record_id(ADDON_ID, resource_type, key),
+            "resource_type": resource_type,
+            "addon_id": ADDON_ID,
+            "addon": ADDON,
+            "name": name,
+            "provider": "openci-tf",
+        }
+        values.update(fields)
+        stamp_run_identity(values, env=os.environ)
+        url, headers = self._qhost()
+        response = requests.put(
+            f"{url}/api/v1/resources",
+            headers=headers,
+            json={"_id": values["_id"], "resource_type": resource_type, "data": values},
+            timeout=30,
+        )
+        response.raise_for_status()
+        print(f"recorded {resource_type} row {values['_id']} ({name})")
+        return values
+
+    def _rows(self, resource_type):
+        """The add-on's rows of one type - the QUERY that decides what to delete."""
+        url, headers = self._qhost()
+        response = requests.get(
+            f"{url}/api/v1/resources",
+            headers=headers,
+            params={"match": json.dumps({"addon_id": ADDON_ID, "resource_type": resource_type})},
+            timeout=30,
+        )
+        response.raise_for_status()
+        rows = response.json()["data"]
+        if not isinstance(rows, list):
+            raise TypeError("QHost resources response data must be a list")
+        return [row.get("data") or {} for row in rows]
+
+    def _delete_row(self, data):
+        url, headers = self._qhost()
+        row_id = data["_id"]
+        response = requests.delete(
+            f"{url}/api/v1/resources/{urllib.parse.quote(str(row_id), safe='')}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+        deleted = response.json()["data"]["deleted"]
+        if deleted != 1:
+            raise ValueError(
+                f"deleting {data.get('resource_type')} row {row_id} removed "
+                f"{deleted} rows, expected exactly 1"
+            )
+        print(f"deleted {data.get('resource_type')} row {row_id}")
+
     # -- stages: create ----------------------------------------------------
 
     def create_token(self):
@@ -223,6 +344,10 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             Overwrite=True,
         )
         print(f"clone token written to SSM {path}")
+        self._put_row(
+            "ssm_parameter", path, "openci-tf clone token",
+            parameter_name=path, purpose="clone_token",
+        )
 
     def create_register(self):
         checkout = self.checkout()
@@ -249,6 +374,37 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             "--project-name", self.project_name,
         ]
         subprocess.run(argv, cwd=checkout, check=True)
+        self._record_registration()
+
+    def _record_registration(self):
+        """Record what register_repo.py created: the webhook, the two settings
+        items, and its install-namespace SSM parameters."""
+        repo = os.environ["GITOPS_REPO"]
+        hook_id = self._hook_id()
+        self._put_row(
+            "github_webhook", f"{repo}#{hook_id}", f"openci-tf webhook on {repo}",
+            github_repo=repo, hook_id=hook_id,
+        )
+        table = self._deploy_outputs()["settings_table_name"]
+        for pk, sk in (("repo", os.environ["TRIGGER_ID"]),
+                       ("account", os.environ["ACCOUNT_ALIAS"])):
+            key = {"pk": {"S": pk}, "sk": {"S": sk}}
+            if not self.dynamodb.get_item(TableName=table, Key=key).get("Item"):
+                raise ValueError(
+                    f"register_repo.py left no {pk}/{sk} item in {table}"
+                )
+            self._put_row(
+                "settings_item", f"{table}/{pk}/{sk}", f"openci-tf settings {pk}/{sk}",
+                table_name=table, pk=pk, sk=sk,
+            )
+        for suffix in ("webhook_secret", "webhook_hook_id"):
+            name = f"{self.install_ssm_prefix}/{suffix}"
+            if self._ssm_optional(name, decrypt=True) is None:
+                raise ValueError(f"register_repo.py left no SSM parameter {name}")
+            self._put_row(
+                "ssm_parameter", name, f"openci-tf {suffix}",
+                parameter_name=name, purpose=suffix,
+            )
 
     def create_record(self):
         outputs = self._deploy_outputs()
@@ -274,8 +430,11 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         if not account_alias:
             raise ValueError("ACCOUNT_ALIAS is empty")
         resource = {
-            "_id": hashlib.md5(b"addon:openci_tf").hexdigest(),
+            "_id": ADDON_ID,
             "resource_type": "addon",
+            # The parent row carries its own id as addon_id, so the ONE query
+            # (addon_id == ADDON_ID) finds the parent and every child row.
+            "addon_id": ADDON_ID,
             "provider": "openci-tf",
             "source_method": "shellout",
             "name": f"openci-tf-{os.environ.get('INSTALL_NAME', 'main')}",
@@ -305,15 +464,21 @@ class OpenciTfAddonStage(ResourceCmdHelper):
     # -- stages: destroy ---------------------------------------------------
 
     def destroy_token(self):
-        self._ssm_delete(os.environ["CLONE_TOKEN_SSM_PATH"])
-        print("clone token deleted from SSM")
+        """Delete every ssm_parameter row's parameter - the LAST destroy stage
+        (the clone token is one of them; every earlier stage may read it)."""
+        rows = self._rows("ssm_parameter")
+        if not rows:
+            print("no ssm_parameter rows - nothing to delete")
+        for data in rows:
+            self._ssm_delete(data["parameter_name"])
+            self._delete_row(data)
+        print("SSM parameters deleted")
 
     def _qhost_resources(self, resource_type):
-        qhost_url = os.environ["QHOST_URL"].rstrip("/")
-        qhost_token = os.environ["QHOST_JWT_TOKEN"]
+        url, headers = self._qhost()
         response = requests.get(
-            f"{qhost_url}/api/v1/resources",
-            headers={"Authorization": f"Bearer {qhost_token}"},
+            f"{url}/api/v1/resources",
+            headers=headers,
             params={"resource_type": resource_type},
             timeout=30,
         )
@@ -373,80 +538,78 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             response.raise_for_status()
             print(f"closed GitHub PR #{pr_number} on {repo}")
 
-    def _registration_settings(self):
-        outputs_value = self._ssm_optional(
-            f"{self.install_ssm_prefix}/config0_outputs"
+    def _delete_webhook(self, repo, hook_id, token):
+        import urllib.error
+
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/hooks/{hook_id}",
+            method="DELETE",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
         )
-        if outputs_value is None:
-            return None, []
-        outputs = json.loads(outputs_value)
-        table = outputs["settings_table_name"]
-        keys = [
-            {"pk": {"S": "repo"}, "sk": {"S": os.environ["TRIGGER_ID"]}},
-            {"pk": {"S": "account"}, "sk": {"S": os.environ["ACCOUNT_ALIAS"]}},
-        ]
-        rows = [
-            self.dynamodb.get_item(TableName=table, Key=key).get("Item")
-            for key in keys
-        ]
-        return table, [
-            (key, row) for key, row in zip(keys, rows, strict=True) if row
-        ]
+        try:
+            urllib.request.urlopen(request)
+            print(f"deleted GitHub webhook {hook_id} on {repo}")
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            print(f"GitHub webhook {hook_id} on {repo} already absent")
 
     def destroy_register(self):
-        import urllib.error
-        import urllib.request
-
-        repo = os.environ["GITOPS_REPO"]
-        pr_numbers = self._pipeline_pr_numbers(repo)
-        hook_id_param = f"{self.install_ssm_prefix}/webhook_hook_id"
-        hook_id = self._hook_id(optional=True)
-        table, settings = self._registration_settings()
-        token = self._ssm_optional(
-            os.environ["CLONE_TOKEN_SSM_PATH"], decrypt=True
-        )
-        if token is None:
-            if hook_id is not None or pr_numbers or settings:
-                raise ValueError(
-                    "clone token is missing while durable repository registration "
-                    "evidence remains; refusing to skip GitHub cleanup"
-                )
-            print(
-                "no token, webhook, PR, or settings evidence - registration "
-                "was never activated; continuing partial-install teardown"
-            )
+        """github_webhook rows: close the recorded PRs, delete each webhook;
+        settings_item rows: delete each item. Rows go once their thing is gone."""
+        webhooks = self._rows("github_webhook")
+        settings = self._rows("settings_item")
+        if not webhooks and not settings:
+            print("no github_webhook or settings_item rows - registration already removed")
             return
 
-        # PRs must close while the token still exists. This includes the
-        # write-back PRs on pipeline rows and dedicated mutation PRs on
-        # pipeline_run rows.
-        self._close_pipeline_prs(repo, token, pr_numbers)
+        if webhooks:
+            token = self._ssm_optional(os.environ["CLONE_TOKEN_SSM_PATH"], decrypt=True)
+            if token is None:
+                raise ValueError(
+                    "clone token is missing while github_webhook rows remain; "
+                    "refusing to skip GitHub cleanup"
+                )
+            # PRs must close while the token still exists. This includes the
+            # write-back PRs on pipeline rows and dedicated mutation PRs on
+            # pipeline_run rows.
+            for repo in sorted({data["github_repo"] for data in webhooks}):
+                self._close_pipeline_prs(repo, token, self._pipeline_pr_numbers(repo))
+            for data in webhooks:
+                self._delete_webhook(data["github_repo"], data["hook_id"], token)
+                self._delete_row(data)
 
-        if hook_id is not None:
-            request = urllib.request.Request(
-                f"https://api.github.com/repos/{repo}/hooks/{hook_id}",
-                method="DELETE",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Accept": "application/vnd.github+json",
-                },
+        for data in settings:
+            self.dynamodb.delete_item(
+                TableName=data["table_name"],
+                Key={"pk": {"S": data["pk"]}, "sk": {"S": data["sk"]}},
             )
-            try:
-                urllib.request.urlopen(request)
-                print(f"deleted GitHub webhook {hook_id} on {repo}")
-            except urllib.error.HTTPError as error:
-                if error.code != 404:
-                    raise
-                print(f"GitHub webhook {hook_id} on {repo} already absent")
-            self._ssm_delete(hook_id_param)
-        else:
-            print("no recorded webhook hook id - registration already removed")
+            print(f"deleted settings item {data['pk']}/{data['sk']} in {data['table_name']}")
+            self._delete_row(data)
 
-        if table is not None:
-            for key, _ in settings:
-                self.dynamodb.delete_item(TableName=table, Key=key)
-            print("deleted repository and hub-alias settings rows")
-        self._ssm_delete(f"{self.install_ssm_prefix}/webhook_secret")
+    # The three CodeBuild-created things are destroyed by their own CodeBuild
+    # destroy orders (openci-tf-addon-tofu, openci-tf-image-copy), which run in
+    # the engine without QHost access. The row for each is deleted HERE, in the
+    # Lambda-side order the destroy stack places right after the CodeBuild
+    # order. That CodeBuild order had to succeed for this one to run (the stack
+    # sequences them, must_succeed by default), and it destroys through the same
+    # provider that created the thing - its exit 0 IS the confirmation the thing
+    # is gone, so this stage just deletes the row. No separate re-check.
+
+    def destroy_openci_tf_deploy(self):
+        for data in self._rows("openci_tf_deploy"):
+            self._delete_row(data)
+
+    def destroy_ecr_image(self):
+        for data in self._rows("ecr_image"):
+            self._delete_row(data)
+
+    def destroy_ecr_repository(self):
+        for data in self._rows("ecr_repository"):
+            self._delete_row(data)
 
     # -- entrypoint --------------------------------------------------------
 
@@ -454,9 +617,11 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         """Write this side-effect stage's successful teardown receipt.
 
         These stages do not own the generic resource row or its state pointer.
-        Their method returns only after the matching external resources are
-        removed, so a successful command is the stage-local zero-remaining
-        contract consumed by the generic remove handler.
+        Their method returns only after every recorded row of the stage's type
+        is dealt with (its external thing removed - by this stage's own API call
+        or by the CodeBuild destroy order that had to succeed before it - and
+        the row deleted), so a successful command is the stage-local
+        zero-remaining contract consumed by the generic remove handler.
         """
         trigger_id = os.environ.get("QUEUE_ID") or os.environ.get("RUN_ID")
         if not trigger_id:

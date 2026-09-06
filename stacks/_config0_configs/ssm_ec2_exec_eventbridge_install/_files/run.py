@@ -281,6 +281,10 @@ class Main(newSchedStack):
                            resource_type="ssm_ec2_exec_eventbridge_install")
 
         tf.include(values={
+            # The add-on identity stamp (user rule 2026-09-06): the same
+            # addon_id the parent addon row carries, so one query finds the
+            # terraform row and the parent together.
+            "addon_id": self._addon_resource_id(),
             "aws_region": stack.aws_region,
             "s3_bucket": stack.s3_bucket,
             "s3_key_starter": f"{key_prefix}starter.zip",
@@ -363,6 +367,7 @@ class Main(newSchedStack):
         """
         self.stack.record_resource(values={
             "_id": self._addon_resource_id(),
+            "addon_id": self._addon_resource_id(),
             "resource_type": "addon",
             "provider": "aws",
             "name": f"ssm_ec2_exec_eventbridge-{self.stack.install_name}",

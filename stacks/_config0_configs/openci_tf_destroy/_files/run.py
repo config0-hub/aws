@@ -43,6 +43,58 @@ def _init_common(stack):
                 f"openci-tf-trigger:{stack.owner_id}/{stack.repo}".encode()
             ).hexdigest()[:16])
 
+    # The add-on identity every install row is stamped with (= the addon
+    # record's _id; byte-identical to openci_tf_install._init_common).
+    stack.set_variable("addon_resource_id",
+                       hashlib.md5(b"addon:openci_tf").hexdigest())
+
+
+# Byte-identical to config0_cli.gitops.records.ADDON_DESTROY_ORDER (pinned by
+# pkg-config0-cli:parity + its test): registration first, SSM parameters LAST.
+ADDON_DESTROY_ORDER = (
+    "github_webhook",
+    "settings_item",
+    "openci_tf_deploy",
+    "ecr_image",
+    "ecr_repository",
+    "ssm_parameter",
+)
+
+
+def addon_rows_by_type(stack):
+    """QUERY the add-on's rows (addon_id == the addon record id) and group them
+    by resource_type. The rows are the truth of what to delete; nothing is
+    read from a saved field list.
+
+    An install recorded before identity stamping (an ``addon`` row without
+    ``addon_id``) cannot be enumerated: fail loud instead of reporting REMOVED
+    over leaked infrastructure."""
+    rows = stack.get_resource(
+        match={"addon_id": stack.addon_resource_id},
+        overlay_tfstate=False,
+    )
+    if not rows:
+        legacy = stack.get_resource(
+            match={"_id": stack.addon_resource_id},
+            overlay_tfstate=False,
+        )
+        if legacy:
+            raise ValueError(
+                "openci-tf addon record exists without addon_id-stamped rows: "
+                "the install predates identity stamping; reinstall (converge) "
+                "before removing"
+            )
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["resource_type"], []).append(row)
+    unknown = set(grouped) - set(ADDON_DESTROY_ORDER) - {"addon"}
+    if unknown:
+        raise ValueError(
+            f"openci-tf addon rows of unknown resource_type {sorted(unknown)}: "
+            "no deleter is known for them"
+        )
+    return grouped
+
 
 def _stage_stateful_id(stack, stage):
     """The CodeBuild stage's own execution identity - byte-identical to
@@ -77,6 +129,7 @@ def _stage_env_vars(stack, stage):
         "GITOPS_REPO": stack.repo,
         "ACCOUNT_ALIAS": stack.account_alias,
         "CLONE_TOKEN_SSM_PATH": stack.clone_token_ssm_path,
+        "ADDON_ID": stack.addon_resource_id,
         "API_CALLER_ROLE_ARNS": stack.api_caller_role_arns,
         "AWS_DEFAULT_REGION": stack.aws_default_region
     }
@@ -207,26 +260,34 @@ def run(stackargs):
     the anchor's schedule_vars carry the install's persistent arguments plus
     the removal attempt identity).
 
-    The install records no per-stage resource rows, so the generic
-    ``callback_delete`` teardown has nothing to remove; this Method Helper
-    re-runs the install's own stages with METHOD=destroy as ONE sequential
-    order chain in the explicit reverse install order (plan "Removal rules",
-    token LAST):
+    The install recorded every thing it created as a resource row stamped
+    with ``addon_id`` (user rule 2026-09-06: cleanup by identity query). This
+    Method Helper QUERIES those rows, groups them by resource_type, and
+    places each type's deleter as ONE sequential order chain in the contract
+    order (registration first, SSM parameters - the clone token among them -
+    LAST, so every earlier stage and a retry of a failed one still finds it):
 
-        register     close pipeline PRs, delete the GitHub webhook, delete the
-                     settings rows and webhook secret (needs the clone token)
-        deploy       tofu destroy of the deploy and foundation roots
-        image_copy   delete the pushed tenant ECR image tag
-        ecr          tofu destroy of the ECR repository
-        token        delete the clone token from SSM - the last external
-                     side effect, so every earlier stage (and a retry of a
-                     failed one) still finds it
+        github_webhook, settings_item -> register  (Lambda: close pipeline
+                     PRs, delete each webhook, delete each settings item)
+        openci_tf_deploy -> deploy (CodeBuild tofu destroy of the deploy and
+                     foundation roots) + the Lambda row-delete order
+        ecr_image  -> image_copy (CodeBuild: delete the pushed tag) + row delete
+        ecr_repository -> ecr (CodeBuild tofu destroy) + row delete
+        ssm_parameter -> token (Lambda: delete each parameter)
 
-    A failed order stops the chain; saas-api's run_complete destroy gate keeps
-    every row (the addon record included) and reports FAILED, and the next
-    DELETE re-arms the deterministic anchor and converges: every stage treats
-    an already-absent target as success with evidence. The addon record is
-    NOT unrecorded here - it is the durable cleanup identity until the run
+    The CodeBuild destroy order tears the thing down through the same provider
+    that created it; the Lambda order right after it only unrecords the rows
+    (the engine's CodeBuild has no QHost access). The Lambda order runs only if
+    the CodeBuild order succeeded - the stack sequences them and must_succeed
+    defaults to stop-on-failure - so its exit 0 is the confirmation, with no
+    separate is-it-gone re-check.
+
+    A type with no rows places no order (a prior attempt already removed
+    those things and their rows), so a retry converges. A failed order stops
+    the chain; saas-api's run_complete destroy gate keeps every remaining row
+    (the addon record included) and reports FAILED, and the next DELETE
+    re-arms the deterministic anchor and re-queries. The addon record is NOT
+    unrecorded here - it is the durable cleanup identity until the run
     succeeds; run_complete's atomic by-project sweep removes it together with
     the schedule rows, then reports REMOVED.
     """
@@ -292,14 +353,27 @@ def run(stackargs):
     stack.verify_variables()
     _init_common(stack)
 
-    _insert_stage(stack, "register", 1200,
-                  "openci-tf addon: close pipeline PRs and remove registration")
-    _insert_tofu_stage(stack, "deploy", 2400,
-                       "openci-tf addon: destroy deploy and foundation")
-    _insert_image_copy(stack)
-    _insert_tofu_stage(stack, "ecr", 900,
-                       "openci-tf addon: destroy the ECR repository")
-    _insert_stage(stack, "token", 900,
-                  "openci-tf addon: delete the clone token from SSM")
+    rows = addon_rows_by_type(stack)
+
+    if rows.get("github_webhook") or rows.get("settings_item"):
+        _insert_stage(stack, "register", 1200,
+                      "openci-tf addon: close pipeline PRs and remove registration")
+    if rows.get("openci_tf_deploy"):
+        _insert_tofu_stage(stack, "deploy", 2400,
+                           "openci-tf addon: destroy deploy and foundation")
+        _insert_stage(stack, "openci_tf_deploy", 600,
+                      "openci-tf addon: delete the deploy row")
+    if rows.get("ecr_image"):
+        _insert_image_copy(stack)
+        _insert_stage(stack, "ecr_image", 600,
+                      "openci-tf addon: delete the image row")
+    if rows.get("ecr_repository"):
+        _insert_tofu_stage(stack, "ecr", 900,
+                           "openci-tf addon: destroy the ECR repository")
+        _insert_stage(stack, "ecr_repository", 600,
+                      "openci-tf addon: delete the repository row")
+    if rows.get("ssm_parameter"):
+        _insert_stage(stack, "token", 900,
+                      "openci-tf addon: delete the SSM parameters (clone token last)")
 
     return stack.get_results()
