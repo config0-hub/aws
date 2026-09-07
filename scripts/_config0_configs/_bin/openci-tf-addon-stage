@@ -22,24 +22,38 @@ row once its thing is torn down - by this stage's own API call, or by the
 CodeBuild destroy order that ran (and had to succeed) right before it. A row
 whose thing is already gone converges (the row is deleted, nothing else).
 
+Every create stage writes its cleanup-identity ROW BEFORE it does the external
+provider action (finding M3): a QHost write failure after a provider success
+must still leave a discoverable row, or removal (which QUERIES the rows) cannot
+find the real thing and a retry can leak a duplicate. The provider actions are
+idempotent on their natural key (SSM put_parameter Overwrite, keyed DynamoDB
+put), so a retry finds the row already present (upsert) and re-does the same
+thing. The one id not known up front is the GitHub webhook's hook id, so its row
+keys on the callback URL we control and the hook id is filled in after the POST.
+
 Stages (create):
-    token     the GitHub clone token (encrypted run environment, never order
+    token     the ssm_parameter row (purpose=clone_token) is written FIRST, then
+              the GitHub clone token (encrypted run environment, never order
               params) is written to SSM /openci-tf/clone-token/<name> as a
-              SecureString; row: ssm_parameter (purpose=clone_token)
-    register  install/register_repo.py from the pinned openci-tf source
-              (empty-repo initialization, webhook secret, repo plus hub-alias
-              settings, webhook create/reconcile; hook_id recorded in SSM);
-              rows: github_webhook, settings_item (repo + account), and one
-              ssm_parameter per install-namespace parameter register_repo.py
-              wrote (webhook_secret, webhook_hook_id)
+              SecureString
+    register  the github_webhook row (keyed on the callback URL), the two
+              settings_item rows (repo + account), and the two install-namespace
+              ssm_parameter rows (webhook_secret, webhook_hook_id) are written
+              FIRST; THEN install/register_repo.py from the pinned openci-tf
+              source (empty-repo initialization, webhook secret, repo plus
+              hub-alias settings, webhook create/reconcile; hook_id recorded in
+              SSM) creates those things idempotently, and _record_registration
+              confirms them and fills the webhook row's decrypted hook id
     record    the parent addon record (deploy outputs + registration values +
               attempt_id + addon_id) through the resource JSON channel
 
 Stages (destroy), placed by openci_tf_destroy in the contract order
 (registration, deploy, image, ECR repository, SSM parameters LAST):
     register            github_webhook rows: close recorded write-back /
-                        mutation PRs, delete each webhook; settings_item
-                        rows: delete each item
+                        mutation PRs, delete each webhook (by its recorded hook
+                        id, or - for a row whose install failed before the hook
+                        id was recorded - by the callback URL the row carries);
+                        settings_item rows: delete each item
     openci_tf_deploy    the tofu deploy / image-copy / ecr CodeBuild destroy
     ecr_image           order already ran (and had to succeed) before this
     ecr_repository      Lambda order: delete the rows
@@ -135,6 +149,19 @@ def _github_owner_repo(repo_url):
     if not owner or not repo or "/" in repo:
         raise ValueError(f"OPENCI_TF_REPO_URL must name <owner>/<repo>, got {repo_url!r}")
     return owner, repo
+
+
+def _normalize_hook_url(url):
+    """Collapse doubled path slashes so a hook written by an older release
+    (which joined the webhook URL as ``//webhook``) still matches."""
+    if not isinstance(url, str):
+        return ""
+    return re.sub(r"(?<!:)/{2,}", "/", url).rstrip("/")
+
+
+def _github_stored_webhook_url(webhook_url):
+    """The config.url register_repo.py POSTs: bare deploy output + trigger id."""
+    return f"{webhook_url.rstrip('/')}/{os.environ['TRIGGER_ID']}"
 
 
 def fetch_pinned_source(repo_url, git_ref, dest_root, urlopen=urllib.request.urlopen):
@@ -337,6 +364,14 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         if not token:
             raise ValueError("GITOPS_TOKEN is empty")
         path = os.environ["CLONE_TOKEN_SSM_PATH"]
+        # Row-first (finding M3): record the cleanup-identity row BEFORE the SSM
+        # parameter exists, so a QHost failure after put_parameter still leaves a
+        # discoverable row. put_parameter(Overwrite=True) is idempotent, so a
+        # retry finds the row present (upsert) and rewrites the same parameter.
+        self._put_row(
+            "ssm_parameter", path, "openci-tf clone token",
+            parameter_name=path, purpose="clone_token",
+        )
         self.ssm.put_parameter(
             Name=path,
             Value=token,
@@ -344,14 +379,38 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             Overwrite=True,
         )
         print(f"clone token written to SSM {path}")
-        self._put_row(
-            "ssm_parameter", path, "openci-tf clone token",
-            parameter_name=path, purpose="clone_token",
-        )
 
     def create_register(self):
         checkout = self.checkout()
-        webhook_url = self._deploy_outputs()["webhook_url"]
+        outputs = self._deploy_outputs()
+        repo = os.environ["GITOPS_REPO"]
+        bare_webhook_url = outputs["webhook_url"]
+        stored_webhook_url = _github_stored_webhook_url(bare_webhook_url)
+        table = outputs["settings_table_name"]
+        # Row-first (finding M3): every cleanup-identity row register_repo.py's
+        # things map to is written BEFORE register_repo.py creates them, so a
+        # QHost write failure after a provider success still leaves a
+        # discoverable row and a retry converges. The webhook keys on the
+        # config.url register_repo.py POSTs (bare deploy webhook_url +
+        # TRIGGER_ID; its hook id is unknown until the POST; _record_registration
+        # fills it in after); register_repo.py (re)creates the settings items and
+        # the SSM parameters idempotently on their key.
+        self._put_row(
+            "github_webhook", f"{repo}#{stored_webhook_url}", f"openci-tf webhook on {repo}",
+            github_repo=repo, webhook_url=stored_webhook_url,
+        )
+        for pk, sk in (("repo", os.environ["TRIGGER_ID"]),
+                       ("account", os.environ["ACCOUNT_ALIAS"])):
+            self._put_row(
+                "settings_item", f"{table}/{pk}/{sk}", f"openci-tf settings {pk}/{sk}",
+                table_name=table, pk=pk, sk=sk,
+            )
+        for suffix in ("webhook_secret", "webhook_hook_id"):
+            name = f"{self.install_ssm_prefix}/{suffix}"
+            self._put_row(
+                "ssm_parameter", name, f"openci-tf {suffix}",
+                parameter_name=name, purpose=suffix,
+            )
         # The pinned runtime download URLs come from the checkout itself, so
         # registration always matches the installed openci-tf version.
         completed = subprocess.run(
@@ -367,7 +426,7 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             "--repo", os.environ["GITOPS_REPO"],
             "--trigger-id", os.environ["TRIGGER_ID"],
             "--account-alias", os.environ["ACCOUNT_ALIAS"],
-            "--webhook-url", webhook_url,
+            "--webhook-url", bare_webhook_url,
             "--github-token-ssm", os.environ["CLONE_TOKEN_SSM_PATH"],
             "--upstream-urls-json", completed.stdout.strip(),
             "--region", self.region,
@@ -377,15 +436,17 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         self._record_registration()
 
     def _record_registration(self):
-        """Record what register_repo.py created: the webhook, the two settings
-        items, and its install-namespace SSM parameters."""
-        repo = os.environ["GITOPS_REPO"]
-        hook_id = self._hook_id()
-        self._put_row(
-            "github_webhook", f"{repo}#{hook_id}", f"openci-tf webhook on {repo}",
-            github_repo=repo, hook_id=hook_id,
-        )
-        table = self._deploy_outputs()["settings_table_name"]
+        """Confirm register_repo.py created what its row-first receipts promised,
+        then fill the webhook row's hook id in.
+
+        create_register wrote the github_webhook / settings_item / ssm_parameter
+        rows BEFORE register_repo.py ran. Here, after it ran, fail loud if any
+        thing is missing (a register_repo.py that exited 0 without doing its job
+        is broken), then rewrite the webhook row with the decrypted hook id that
+        was only known after the POST (same deterministic id, keyed on the
+        callback URL)."""
+        outputs = self._deploy_outputs()
+        table = outputs["settings_table_name"]
         for pk, sk in (("repo", os.environ["TRIGGER_ID"]),
                        ("account", os.environ["ACCOUNT_ALIAS"])):
             key = {"pk": {"S": pk}, "sk": {"S": sk}}
@@ -393,18 +454,17 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                 raise ValueError(
                     f"register_repo.py left no {pk}/{sk} item in {table}"
                 )
-            self._put_row(
-                "settings_item", f"{table}/{pk}/{sk}", f"openci-tf settings {pk}/{sk}",
-                table_name=table, pk=pk, sk=sk,
-            )
         for suffix in ("webhook_secret", "webhook_hook_id"):
             name = f"{self.install_ssm_prefix}/{suffix}"
             if self._ssm_optional(name, decrypt=True) is None:
                 raise ValueError(f"register_repo.py left no SSM parameter {name}")
-            self._put_row(
-                "ssm_parameter", name, f"openci-tf {suffix}",
-                parameter_name=name, purpose=suffix,
-            )
+        repo = os.environ["GITOPS_REPO"]
+        stored_webhook_url = _github_stored_webhook_url(outputs["webhook_url"])
+        self._put_row(
+            "github_webhook", f"{repo}#{stored_webhook_url}",
+            f"openci-tf webhook on {repo}",
+            github_repo=repo, webhook_url=stored_webhook_url, hook_id=self._hook_id(),
+        )
 
     def create_record(self):
         outputs = self._deploy_outputs()
@@ -557,6 +617,39 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                 raise
             print(f"GitHub webhook {hook_id} on {repo} already absent")
 
+    def _hooks_matching_url(self, repo, webhook_url, token):
+        """The repo's hook ids whose config url is the stored webhook URL - the
+        same config.url register_repo.py POSTed (bare deploy webhook_url +
+        TRIGGER_ID). Used to delete a webhook whose row never recorded its hook
+        id (an install that failed after the POST): the stored URL is the
+        natural key we control, so a retry's duplicate hook is discoverable and
+        none-found is a no-op."""
+        # ponytail: per_page=100 (not paginated); an install repo carries one
+        # openci-tf hook - a page loop only matters past 100 webhooks on one repo.
+        response = requests.get(
+            f"https://api.github.com/repos/{repo}/hooks",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            params={"per_page": 100},
+            timeout=30,
+        )
+        response.raise_for_status()
+        hooks = response.json()
+        if len(hooks) >= 100:
+            raise RuntimeError(f"{repo} has 100+ webhooks; hook listing is not authoritative")
+        wanted = _normalize_hook_url(webhook_url)
+        matches = []
+        for hook in hooks:
+            hook_url = (hook.get("config") or {}).get("url")
+            if hook_url == webhook_url:
+                matches.append(str(hook["id"]))
+            elif _normalize_hook_url(hook_url) == wanted:
+                matches.append(str(hook["id"]))
+        return matches
+
     def destroy_register(self):
         """github_webhook rows: close the recorded PRs, delete each webhook;
         settings_item rows: delete each item. Rows go once their thing is gone."""
@@ -579,7 +672,22 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             for repo in sorted({data["github_repo"] for data in webhooks}):
                 self._close_pipeline_prs(repo, token, self._pipeline_pr_numbers(repo))
             for data in webhooks:
-                self._delete_webhook(data["github_repo"], data["hook_id"], token)
+                repo = data["github_repo"]
+                hook_id = data.get("hook_id")
+                if hook_id:
+                    self._delete_webhook(repo, hook_id, token)
+                else:
+                    # A row-first receipt whose install failed before its hook
+                    # id was recorded (finding M3): find the hook by the callback
+                    # URL the row carries and delete it. None found = exit 0.
+                    matches = self._hooks_matching_url(repo, data["webhook_url"], token)
+                    if not matches:
+                        print(
+                            f"no GitHub webhook on {repo} with callback "
+                            f"{data['webhook_url']} - already absent"
+                        )
+                    for match in matches:
+                        self._delete_webhook(repo, match, token)
                 self._delete_row(data)
 
         for data in settings:
