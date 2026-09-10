@@ -38,16 +38,24 @@ Stages (create):
               SecureString
     register  the github_webhook row (keyed on the callback URL), the two
               settings_item rows (repo + account), and the install-namespace
-              ssm_parameter rows are written FIRST - webhook_secret and
-              webhook_hook_id (recorded later by register_repo.py) plus
-              webhook_repo, the owner/repo the webhook lands on, written HERE and
-              now so the offboard sweep can attribute and delete the hook after a
-              permanent-deletion + re-onboard wiped the add-on row (defect 48);
-              THEN install/register_repo.py from the pinned openci-tf source
-              (empty-repo initialization, webhook secret, repo plus hub-alias
-              settings, webhook create/reconcile; hook_id recorded in SSM)
-              creates those things idempotently, and _record_registration
-              confirms webhook_secret/webhook_hook_id and fills the webhook row's
+              ssm_parameter rows are written FIRST - webhook_secret,
+              webhook_hook_id (recorded later by register_repo.py), and
+              webhook_binding (the cleanup-identity row; its parameter is written
+              around registration, below); THEN install/register_repo.py from the
+              pinned openci-tf source (empty-repo initialization, webhook secret,
+              repo plus hub-alias settings, webhook create/reconcile; hook_id
+              recorded in SSM) creates those things idempotently. The
+              webhook_binding parameter pairs the owner/repo the hook lands on
+              with its callback URL so the offboard sweep can attribute and delete
+              OUR own hook even after a permanent-deletion + re-onboard wiped the
+              add-on row (defect 48). It is written PENDING (hook id unknown)
+              BEFORE the child so a hard kill mid-registration still leaves a
+              receipt the sweep can act on (R2), then upgraded to BOUND (id filled)
+              after the child recorded the id. If the bound write fails, the hook
+              is deleted ONLY when this run created it (finding F2); a hook this
+              run merely reconciled is a working pre-existing callback and is kept,
+              failing loud (regression R1). Finally _record_registration confirms
+              webhook_secret/webhook_hook_id and fills the webhook row's
               decrypted hook id
     record    the parent addon record (deploy outputs + registration values +
               attempt_id + addon_id) through the resource JSON channel
@@ -416,18 +424,18 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                 "ssm_parameter", name, f"openci-tf {suffix}",
                 parameter_name=name, purpose=suffix,
             )
-        # Record the repo the webhook lands on beside the hook id so the offboard
-        # sweep can attribute and delete our own hook even after a
-        # permanent-deletion + re-onboard wiped the add-on row (defect 48).
+        # Record the cleanup-identity row for the webhook binding (row-first,
+        # finding M3) so destroy_token deletes the parameter generically by its
+        # ssm_parameter row. The parameter VALUE is written twice around the child
+        # (below): pending before register_repo.py runs (R2, so a hard kill leaves
+        # a discoverable receipt) and bound after it records the hook id (F2).
         # register_repo.py records the hook id but not the repo, so this stage
-        # writes it - row-first (finding M3), and destroy_token deletes the
-        # parameter generically by its ssm_parameter row.
-        repo_param = f"{self.install_ssm_prefix}/webhook_repo"
+        # pairs the owner/repo with the callback URL for the offboard sweep.
+        binding_param = f"{self.install_ssm_prefix}/webhook_binding"
         self._put_row(
-            "ssm_parameter", repo_param, "openci-tf webhook_repo",
-            parameter_name=repo_param, purpose="webhook_repo",
+            "ssm_parameter", binding_param, "openci-tf webhook_binding",
+            parameter_name=binding_param, purpose="webhook_binding",
         )
-        self.ssm.put_parameter(Name=repo_param, Value=repo, Type="String", Overwrite=True)
         # The pinned runtime download URLs come from the checkout itself, so
         # registration always matches the installed openci-tf version.
         completed = subprocess.run(
@@ -449,8 +457,75 @@ class OpenciTfAddonStage(ResourceCmdHelper):
             "--region", self.region,
             "--project-name", self.project_name,
         ]
+        # Before invoking the child (findings R1/R2): create_token already wrote
+        # the clone token and register_repo.py needs it, so read it REQUIRED - a
+        # loud miss, never a silent skip. Snapshot the repo's existing hook ids.
+        # A hook whose id is NOT in this set after the child ran is one THIS run
+        # created (safe to delete if the binding write then fails); a hook whose
+        # id WAS already present was reconciled, is a working callback this run
+        # did not create, and must survive a late failure (regression R1). This
+        # GET is the created-vs-reconciled signal rather than parsing the child's
+        # stdout: capturing its output would swallow register_repo.py's own loud
+        # failure diagnostics behind a try/except the fail-loud rule forbids.
+        token = self._ssm_get(os.environ["CLONE_TOKEN_SSM_PATH"], decrypt=True)
+        pre_existing_hook_ids = {str(hook["id"]) for hook in self._list_repo_hooks(repo, token)}
+        # Write the PENDING binding (owner/repo + callback URL, hook id unknown)
+        # BEFORE the child. A hard kill anywhere in the child then still leaves a
+        # receipt the offboard sweep resolves by listing the repo's hooks (R2).
+        self._write_binding(binding_param, repo, stored_webhook_url, hook_id=None, state="pending")
         subprocess.run(argv, cwd=checkout, check=True)
+        # The hook now exists and its id is recorded in SSM. Upgrade the pending
+        # binding to the bound one (id + state) as ONE write; on failure delete
+        # the hook ONLY if this run created it - so no hook this run created is
+        # left unattributable (finding F2) and no reconciled pre-existing hook is
+        # destroyed (regression R1).
+        hook_id = self._hook_id()
+        self._persist_webhook_binding(
+            binding_param, repo, stored_webhook_url, hook_id, token,
+            created=hook_id not in pre_existing_hook_ids,
+        )
         self._record_registration()
+
+    def _write_binding(self, binding_param, repo, stored_webhook_url, *, hook_id, state):
+        """Write the offboard sweep's hook -> repo binding as one JSON value.
+
+        ``pending`` (hook_id None) is written BEFORE register_repo.py runs so a
+        hard kill mid-child still leaves a receipt the sweep resolves by listing
+        the repo's hooks; ``bound`` (hook_id filled) replaces it once the child
+        recorded the id."""
+        value = json.dumps(
+            {"repo": repo, "url": stored_webhook_url, "hook_id": hook_id, "state": state},
+            separators=(",", ":"),
+        )
+        self.ssm.put_parameter(Name=binding_param, Value=value, Type="String", Overwrite=True)
+
+    def _persist_webhook_binding(
+        self, binding_param, repo, stored_webhook_url, hook_id, token, *, created
+    ):
+        """Upgrade the pending binding to the bound one; on failure delete the
+        hook ONLY if this run created it.
+
+        register_repo.py has recorded the hook id in SSM. This writes the full
+        binding (owner/repo + callback URL + id + state) the offboard sweep uses
+        to delete OUR own hook - and only ours - after a permanent-deletion +
+        re-onboard wiped the add-on row (defect 48). If the write fails and this
+        run CREATED the hook, the just-created hook is deleted (we have the repo,
+        its id, and the clone token) and the original error re-raised, so no hook
+        is left without a binding the sweep can act on (finding F2). If this run
+        only RECONCILED a pre-existing hook, the hook is a working callback this
+        run did not create: it is kept and the failure raised loud, naming the
+        owner/repo and hook id (regression R1)."""
+        try:
+            self._write_binding(binding_param, repo, stored_webhook_url, hook_id=hook_id, state="bound")
+        except BaseException as error:
+            if created:
+                self._delete_webhook(repo, hook_id, token)
+                raise
+            raise RuntimeError(
+                f"webhook binding write failed for {repo} hook {hook_id}; the hook "
+                "was reconciled (pre-existing), not created by this run - left in place"
+            ) from error
+        print(f"recorded webhook binding {binding_param} ({repo})")
 
     def _record_registration(self):
         """Confirm register_repo.py created what its row-first receipts promised,
@@ -634,13 +709,9 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                 raise
             print(f"GitHub webhook {hook_id} on {repo} already absent")
 
-    def _hooks_matching_url(self, repo, webhook_url, token):
-        """The repo's hook ids whose config url is the stored webhook URL - the
-        same config.url register_repo.py POSTed (bare deploy webhook_url +
-        TRIGGER_ID). Used to delete a webhook whose row never recorded its hook
-        id (an install that failed after the POST): the stored URL is the
-        natural key we control, so a retry's duplicate hook is discoverable and
-        none-found is a no-op."""
+    def _list_repo_hooks(self, repo, token):
+        """The repo's webhooks (single page). A 100+ listing is not
+        authoritative - fail loud rather than act on a partial view."""
         # ponytail: per_page=100 (not paginated); an install repo carries one
         # openci-tf hook - a page loop only matters past 100 webhooks on one repo.
         response = requests.get(
@@ -657,9 +728,18 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         hooks = response.json()
         if len(hooks) >= 100:
             raise RuntimeError(f"{repo} has 100+ webhooks; hook listing is not authoritative")
+        return hooks
+
+    def _hooks_matching_url(self, repo, webhook_url, token):
+        """The repo's hook ids whose config url is the stored webhook URL - the
+        same config.url register_repo.py POSTed (bare deploy webhook_url +
+        TRIGGER_ID). Used to delete a webhook whose row never recorded its hook
+        id (an install that failed after the POST): the stored URL is the
+        natural key we control, so a retry's duplicate hook is discoverable and
+        none-found is a no-op."""
         wanted = _normalize_hook_url(webhook_url)
         matches = []
-        for hook in hooks:
+        for hook in self._list_repo_hooks(repo, token):
             hook_url = (hook.get("config") or {}).get("url")
             if hook_url == webhook_url:
                 matches.append(str(hook["id"]))
