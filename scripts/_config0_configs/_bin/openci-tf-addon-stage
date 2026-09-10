@@ -37,13 +37,18 @@ Stages (create):
               params) is written to SSM /openci-tf/clone-token/<name> as a
               SecureString
     register  the github_webhook row (keyed on the callback URL), the two
-              settings_item rows (repo + account), and the two install-namespace
-              ssm_parameter rows (webhook_secret, webhook_hook_id) are written
-              FIRST; THEN install/register_repo.py from the pinned openci-tf
-              source (empty-repo initialization, webhook secret, repo plus
-              hub-alias settings, webhook create/reconcile; hook_id recorded in
-              SSM) creates those things idempotently, and _record_registration
-              confirms them and fills the webhook row's decrypted hook id
+              settings_item rows (repo + account), and the install-namespace
+              ssm_parameter rows are written FIRST - webhook_secret and
+              webhook_hook_id (recorded later by register_repo.py) plus
+              webhook_repo, the owner/repo the webhook lands on, written HERE and
+              now so the offboard sweep can attribute and delete the hook after a
+              permanent-deletion + re-onboard wiped the add-on row (defect 48);
+              THEN install/register_repo.py from the pinned openci-tf source
+              (empty-repo initialization, webhook secret, repo plus hub-alias
+              settings, webhook create/reconcile; hook_id recorded in SSM)
+              creates those things idempotently, and _record_registration
+              confirms webhook_secret/webhook_hook_id and fills the webhook row's
+              decrypted hook id
     record    the parent addon record (deploy outputs + registration values +
               attempt_id + addon_id) through the resource JSON channel
 
@@ -411,6 +416,18 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                 "ssm_parameter", name, f"openci-tf {suffix}",
                 parameter_name=name, purpose=suffix,
             )
+        # Record the repo the webhook lands on beside the hook id so the offboard
+        # sweep can attribute and delete our own hook even after a
+        # permanent-deletion + re-onboard wiped the add-on row (defect 48).
+        # register_repo.py records the hook id but not the repo, so this stage
+        # writes it - row-first (finding M3), and destroy_token deletes the
+        # parameter generically by its ssm_parameter row.
+        repo_param = f"{self.install_ssm_prefix}/webhook_repo"
+        self._put_row(
+            "ssm_parameter", repo_param, "openci-tf webhook_repo",
+            parameter_name=repo_param, purpose="webhook_repo",
+        )
+        self.ssm.put_parameter(Name=repo_param, Value=repo, Type="String", Overwrite=True)
         # The pinned runtime download URLs come from the checkout itself, so
         # registration always matches the installed openci-tf version.
         completed = subprocess.run(
