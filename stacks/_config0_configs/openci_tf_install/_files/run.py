@@ -99,7 +99,7 @@ class Main(newSchedStack):
                                 types="str")
         self.parse.add_optional(
             key="openci_tf_git_ref",
-            default="295b9371faed02486b3eaa8134f2104369902d44",
+            default="7a9978c2b84fb109570c110bbeb7be6f5d9403ef",
             types="str",
         )
 
