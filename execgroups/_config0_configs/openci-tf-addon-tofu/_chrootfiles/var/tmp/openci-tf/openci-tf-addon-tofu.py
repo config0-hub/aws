@@ -126,7 +126,110 @@ def _outputs_param():
     return f"/openci-tf/install/{env('OPENCI_TF_PROJECT')}/config0_outputs"
 
 
+def _arn_region(arn):
+    """The region field of an AWS ARN, or None (global services leave it empty)."""
+    if isinstance(arn, str) and arn.startswith("arn:"):
+        parts = arn.split(":")
+        if len(parts) > 3 and parts[3]:
+            return parts[3]
+    return None
+
+
+def _ecr_repository_identity(resources):
+    """(project, region) from the deploy state's ``aws_ecr_repository``, or None.
+
+    The repository ``name`` IS the install project (infra/deploy/modules/ecr:
+    ``name = var.project_name``) and its ``arn`` carries the region. Read from
+    the resource, NOT a root output: a targeted ``apply -target=module.ecr``
+    (the ecr stage) does not evaluate root outputs, so the fresh-install deploy
+    state has ``module.ecr`` resources but no ``project_name`` output. The ecr
+    repository is in the deploy state in every shape - the ecr stage creates it
+    before the deploy stage, and the full deploy apply keeps it."""
+    for resource in resources:
+        if resource.get("type") != "aws_ecr_repository":
+            continue
+        for instance in resource.get("instances", []):
+            attributes = instance.get("attributes") or {}
+            name = attributes.get("name")
+            recorded_region = _arn_region(attributes.get("arn"))
+            if name and recorded_region:
+                return name, recorded_region
+    return None
+
+
+def _existing_state_identity(state_bucket, state_key, region, *, s3=None):
+    """(project, region) recorded in the tofu state at
+    ``<state_key>/terraform.tfstate`` in ``state_bucket``, or None when the
+    object is absent or holds no managed resources.
+
+    The install's backend key is fixed (``generate_backend.sh``), so when this
+    object exists ``tofu init`` reads it and ``tofu apply`` adopts the recorded
+    resources instead of recreating them. None means a fresh install. A
+    non-empty state with no ``aws_ecr_repository`` to identify fails loud - the
+    guard must never apply blindly against an unidentifiable state."""
+    from botocore.exceptions import ClientError
+
+    if s3 is None:
+        import boto3
+
+        s3 = boto3.client("s3", region_name=region)
+    key = f"{state_key}/terraform.tfstate"
+    try:
+        body = s3.get_object(Bucket=state_bucket, Key=key)["Body"].read()
+    except ClientError as error:
+        if error.response["Error"]["Code"] in ("NoSuchKey", "NoSuchBucket"):
+            return None
+        raise
+    state = json.loads(body)
+    if not state.get("resources"):
+        return None
+    identity = _ecr_repository_identity(state["resources"])
+    if identity is None:
+        raise ValueError(
+            f"openci-tf install: existing state s3://{state_bucket}/{key} holds "
+            "resources but no aws_ecr_repository to verify project/region against"
+        )
+    return identity
+
+
+def verify_state_adoption(stage, *, s3=None):
+    """Refuse to apply against a state that belongs to a different install.
+
+    When ``deploy/terraform.tfstate`` already exists in the tenant state bucket
+    (a re-install after a permanent Config0 deletion left the tenant bucket and
+    its state intact), its recorded project/region MUST match this install; the
+    fixed backend key then makes ``tofu apply`` adopt those resources. A fresh
+    install (no state) proceeds unchanged. Both the ecr and deploy stages write
+    the ``deploy`` root, whose ``project_name`` output is the install identity,
+    so guarding that state covers both."""
+    state_bucket = env("STATE_BUCKET")
+    project = env("OPENCI_TF_PROJECT")
+    region = env("OPENCI_TF_REGION")
+    identity = _existing_state_identity(state_bucket, "deploy", region, s3=s3)
+    if identity is None:
+        print(
+            f"{stage}: no existing openci-tf deploy state in {state_bucket}; "
+            "fresh install",
+            flush=True,
+        )
+        return
+    recorded_project, recorded_region = identity
+    if recorded_project != project or recorded_region != region:
+        raise ValueError(
+            "openci-tf install: refusing to apply against an existing state for a "
+            f"different install - s3://{state_bucket}/deploy/terraform.tfstate "
+            f"records project={recorded_project!r} region={recorded_region!r}, "
+            f"this install is project={project!r} region={region!r}"
+        )
+    print(
+        f"{stage}: adopting existing openci-tf state "
+        f"(project={recorded_project}, region={recorded_region}) in {state_bucket}",
+        flush=True,
+    )
+
+
 def create(stage, source):
+    verify_state_adoption(stage)
     subprocess.run(
         [sys.executable, "install/config0_addon.py", *_installer_argv(stage)],
         cwd=source, check=True,
