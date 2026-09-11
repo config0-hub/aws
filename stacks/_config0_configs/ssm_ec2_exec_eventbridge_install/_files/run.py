@@ -56,10 +56,11 @@ class Main(newSchedStack):
                                 tags="tfvar",
                                 types="str")
 
-        # The dedicated Lambda-artifacts bucket is a SEPARATE stack
-        # (aws_s3_bucket, resource_type cloud_storage). The config0.yaml supplies
-        # its name here as a selector expression; this run.py treats it as a plain
-        # input var and feeds it to both the CodeBuild upload and the terraform.
+        # This stack creates the Lambda-artifacts bucket itself, in its `bucket`
+        # job (run_bucket), from the required s3_bucket name. Callers must NOT
+        # declare a separate aws_s3_bucket stack for that name: a second create
+        # of the same bucket fails the create-duplicate guard. The name also
+        # feeds the CodeBuild upload and the terraform as a plain input var.
         self.parse.add_required(key="s3_bucket",
                                 tags="tfvar",
                                 types="str")
