@@ -17,7 +17,7 @@
 
 ARG python_version=3.12
 
-FROM python:${python_version} AS build
+FROM public.ecr.aws/docker/library/python:${python_version} AS build
 
 ARG pkg_name=PleaseSetPkgName
 ARG src_dir=PleaseSetSrcDir
@@ -46,7 +46,7 @@ RUN cd $BUILD_DIR/package && \
 
 # Export stage: a minimal image whose only job is to hold the zip at a fixed
 # path for `docker cp` (standalone) — the codebuild flow also cp's from here.
-FROM alpine:3.20 AS export
+FROM public.ecr.aws/docker/library/alpine:3.20 AS export
 
 ARG pkg_name=PleaseSetPkgName
 ARG build_dir=/build

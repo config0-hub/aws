@@ -1,7 +1,7 @@
 ARG python_release=3.11
 ARG python_version=3.11
 
-FROM python:${python_version} AS build
+FROM public.ecr.aws/docker/library/python:${python_version} AS build
 
 ARG python_release=3.11
 ARG pkg_name=PleaseSetPkgName

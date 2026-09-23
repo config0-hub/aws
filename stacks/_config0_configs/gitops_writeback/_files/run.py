@@ -18,18 +18,20 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 class Main(newSchedStack):
     """Write a finished project's execution groups into the user's GitOps
-    repo as one PR (plan "Write-back" contract, phase 5).
+    repo as two direct commits on main: the payload folders, then the managed
+    private replay stack (plan "Write-back" contract; replay plan phase 2
+    build step 4, human decision 2026-09-14: no pull request).
 
     One work job plus the gitops status-producer notifiers:
 
         writeback        `config0 gitops writeback ...` — the CLI verb does
                          everything: frontier check, replay-graph join,
-                         translation, repo tree from the source zips, branch
-                         `config0/<project>/<frontier_hash>`, one PR, one
-                         summary comment, allowed_state_pairs registration,
-                         the `pipeline` record. Idempotent on
-                         `<project_id>:<frontier_hash>` — a duplicate run
-                         returns the same PR.
+                         translation, repo tree from the source zips and the
+                         execgroups' published blobs, the payload commit and
+                         the managed-stack commit pushed directly to main,
+                         allowed_state_pairs registration, the `pipeline`
+                         record. Idempotent on `<project_id>:<frontier_hash>`
+                         — a duplicate run returns the same commits.
         notify_success / notify_failure
                          one typed run_result row through `config0 gitops
                          notify` (plan "Status producer"); the work job fails
@@ -117,7 +119,7 @@ class Main(newSchedStack):
         self.stack.add_external_cmd(
             cmd=" ".join(shlex.quote(part) for part in parts),
             role="gitops/tenant/execute",
-            human_description="gitops write-back: assemble the repo tree and open the PR",
+            human_description="gitops write-back: assemble the repo tree and commit to main",
             display=True)
         return True
 
@@ -144,14 +146,14 @@ class Main(newSchedStack):
 
     def schedule(self):
         # writeback -> notify_success; every failure exit reaches
-        # notify_failure through on_failure. Nothing to destroy: the PR,
-        # branch and pipeline record outlive the run by design (plan
+        # notify_failure through on_failure. Nothing to destroy: the commits
+        # and pipeline record outlive the run by design (plan
         # "Removal rules": retained GitHub history; records swept elsewhere).
         sched = self.new_schedule()
         sched.job = "writeback"
         sched.archive.timeout = 1800
         sched.archive.timewait = 30
-        sched.human_description = "gitops write-back: repo tree + PR"
+        sched.human_description = "gitops write-back: repo tree + commits on main"
         sched.on_success = ["notify_success"]
         sched.on_failure = ["notify_failure"]
         self.add_schedule()
