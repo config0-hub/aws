@@ -27,13 +27,15 @@
 #                config0_outputs for the register and record stages
 # destroy ecr    tofu destroy -target=module.ecr (after the image-copy stage
 #                deleted its tag)
-# destroy deploy tofu destroy of every non-ECR deploy module, then foundation;
-#                the recorded outputs parameter is deleted
+# destroy deploy tofu destroy targeting every address in infra/deploy's state
+#                that is not under module.ecr (the modules, the root-level
+#                engine_*_foundation_* role policies, the data sources), then
+#                foundation; the recorded outputs parameter is deleted
 #
 # A destroy prints the CONFIG0_DESTROY_PRE/POST_STATE_COUNT markers the CLI's
 # execgroup destroy finalizer reads from the engine ExecutionResult: the
-# counts are `tofu state list` before and after, scoped to the modules this
-# stage owns, summed over the roots it destroys. A root whose owned modules
+# counts are `tofu state list` before and after, scoped to the addresses this
+# stage owns, summed over the roots it destroys. A root whose owned addresses
 # are already gone (a re-fired order after a prior attempt's teardown) is
 # skipped, not destroyed again: infra/deploy's data sources read the
 # foundation buckets and KMS alias, so a second `tofu destroy` there fails at
@@ -272,6 +274,13 @@ def owned(addresses, targets):
     ]
 
 
+def deploy_targets(addresses):
+    """The deploy stage owns every deploy-root address not under module.ecr,
+    which the matching ecr stage created and removes after image cleanup."""
+    ecr = set(owned(addresses, ("module.ecr",)))
+    return tuple(address for address in addresses if address not in ecr)
+
+
 def destroy_root(source, root, targets=None):
     """tofu destroy of the targeted modules (or the whole root); returns the
     (pre, post) counts of owned addresses in state. Nothing owned in state
@@ -305,16 +314,7 @@ def destroy(stage, source):
     if stage == "ecr":
         targets = ("module.ecr",)
     else:
-        # The deploy stage owns every deploy module except module.ecr, which
-        # the matching ecr stage created and removes after image cleanup.
-        targets = (
-            "module.hub_executor_poweruser",
-            "module.hub_setup",
-            "module.run_folder",
-            "module.run_folder_apply",
-            "module.run_folder_destroy",
-            "module.openci_tf",
-        )
+        targets = deploy_targets(state_addresses(source, "infra/deploy"))
     pre, post = destroy_root(source, "infra/deploy", targets)
     if stage == "deploy":
         addon.prepare_root(
