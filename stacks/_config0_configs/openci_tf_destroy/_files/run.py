@@ -269,8 +269,10 @@ def run(stackargs):
 
         github_webhook, settings_item -> register  (Lambda: close pipeline
                      PRs, delete each webhook, delete each settings item)
-        openci_tf_deploy -> deploy (CodeBuild tofu destroy of the deploy and
-                     foundation roots) + the Lambda row-delete order
+        (always)   -> deploy (CodeBuild tofu destroy of every non-ECR address
+                     in the deploy root, then the foundation root; the stage
+                     skips itself when nothing it owns is left in state)
+        openci_tf_deploy -> the Lambda row-delete order
         ecr_image  -> image_copy (CodeBuild: delete the pushed tag) + row delete
         ecr_repository -> ecr (CodeBuild tofu destroy) + row delete
         ssm_parameter -> token (Lambda: delete each parameter)
@@ -283,7 +285,11 @@ def run(stackargs):
     separate is-it-gone re-check.
 
     A type with no rows places no order (a prior attempt already removed
-    those things and their rows), so a retry converges. A failed order stops
+    those things and their rows), so a retry converges. The deploy-stage
+    destroy is the exception: it is scheduled from the tofu state, not from
+    the openci_tf_deploy row, because a removal that left deploy-root
+    addresses behind already deleted that row; the stage converges on its
+    own when the state holds nothing it owns. A failed order stops
     the chain; saas-api's run_complete destroy gate keeps every remaining row
     (the addon record included) and reports FAILED, and the next DELETE
     re-arms the deterministic anchor and re-queries. The addon record is NOT
@@ -358,9 +364,12 @@ def run(stackargs):
     if rows.get("github_webhook") or rows.get("settings_item"):
         _insert_stage(stack, "register", 1200,
                       "openci-tf addon: close pipeline PRs and remove registration")
+    # Always scheduled: the state, not the row, decides what the deploy stage
+    # owns (it skips itself when nothing is left), so addresses orphaned by a
+    # removal that already deleted the openci_tf_deploy row are still destroyed.
+    _insert_tofu_stage(stack, "deploy", 2400,
+                       "openci-tf addon: destroy deploy and foundation")
     if rows.get("openci_tf_deploy"):
-        _insert_tofu_stage(stack, "deploy", 2400,
-                           "openci-tf addon: destroy deploy and foundation")
         _insert_stage(stack, "openci_tf_deploy", 600,
                       "openci-tf addon: delete the deploy row")
     if rows.get("ecr_image"):
