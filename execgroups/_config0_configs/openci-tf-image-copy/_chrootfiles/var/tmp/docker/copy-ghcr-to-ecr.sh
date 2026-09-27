@@ -37,8 +37,9 @@ ECR_IMAGE="${ECR_REGISTRY}/${PROJECT}:${ECR_IMAGE_TAG}"
 if [ "$METHOD" = "destroy" ]; then
     # Teardown of this stage alone: drop the pushed tag. The repository itself
     # is owned by (and removed with) the installer's ecr stage. Only the exact
-    # idempotent ImageNotFoundException is accepted; auth, network, and missing
-    # repository failures remain loud.
+    # idempotent ImageNotFoundException and RepositoryNotFoundException are
+    # accepted (the repository already gone means its tags are gone too); auth
+    # and network failures remain loud.
     ERROR_FILE="$(mktemp)"
     trap 'rm -f "$ERROR_FILE"' EXIT
     if ! aws ecr describe-images --region "$REGION" \
@@ -46,6 +47,12 @@ if [ "$METHOD" = "destroy" ]; then
         --image-ids imageTag="$ECR_IMAGE_TAG" >/dev/null 2>"$ERROR_FILE"; then
         if grep -q 'ImageNotFoundException' "$ERROR_FILE"; then
             echo "image tag ${ECR_IMAGE_TAG} already absent from ${PROJECT}"
+            echo "CONFIG0_DESTROY_PRE_STATE_COUNT=0"
+            echo "CONFIG0_DESTROY_POST_STATE_COUNT=0"
+            exit 0
+        fi
+        if grep -q 'RepositoryNotFoundException' "$ERROR_FILE"; then
+            echo "repository ${PROJECT} already absent; nothing left to delete"
             echo "CONFIG0_DESTROY_PRE_STATE_COUNT=0"
             echo "CONFIG0_DESTROY_POST_STATE_COUNT=0"
             exit 0
