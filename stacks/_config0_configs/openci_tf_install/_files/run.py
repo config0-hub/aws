@@ -30,10 +30,10 @@ class Main(newSchedStack):
         register     register_repo.py (webhook secret, settings, webhook)
         record       promote deploy outputs + registration values + attempt_id
                      onto the resources table (the addon record)
-        notify_success / notify_failure
-                     the gitops status producer: one typed addon_result row
-                     through `config0 gitops notify`; every stage reaches the
-                     failure notifier through on_failure
+        notify_success records the add-on; run_complete reports Installed
+                     after the run is terminal
+        notify_failure reports a failed install through `config0 gitops notify`;
+                     every stage reaches it through on_failure
 
     Every thing a stage creates is a resource row of a specific resource_type
     stamped with the add-on identity ``addon_id`` (= the addon record's _id)
@@ -557,12 +557,10 @@ class Main(newSchedStack):
         self._init_common()
         # On a destroy run (the hub renders DESTROY=True into the run env, the
         # same flag the worker's on_delete walk keys off) the success notifier
-        # reports the REMOVAL — owner-sync maps REMOVED to the Convex
-        # ``removed`` addon status. An install run reports COMPLETED.
+        # reports the REMOVAL. An install reports COMPLETED only after
+        # run_complete records the run terminal.
         if os.environ.get("DESTROY", "").lower() in ("true", "1"):
             self._notify("REMOVED")
-        else:
-            self._notify("COMPLETED")
         return True
 
     def run_notify_failure(self):

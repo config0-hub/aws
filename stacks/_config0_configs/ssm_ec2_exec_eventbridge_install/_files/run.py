@@ -39,12 +39,11 @@ class Main(newSchedStack):
 
     One `install` job carries the original two orders (CodeBuild lambda build,
     then the vendored terraform through tf_executor). The add-on flow (plan
-    phase 3) adds the gitops status-producer stages: `notify_success` /
-    `notify_failure` write one typed addon_result row (kind `ssm_ec2_exec`,
-    the region as the add-on key) through `config0 gitops notify`; the install
-    job fails into the failure notifier through on_failure. An onboarding
-    placement passes no workflow_id — the notifier command then states there is
-    no subscriber and writes nothing.
+    phase 3) adds `notify_success`, which records the add-on, and
+    `notify_failure`, which reports a failed install through `config0 gitops
+    notify`. run_complete reports Installed after the run is terminal. The
+    install job fails into the failure notifier through on_failure. An
+    onboarding placement passes no workflow_id, so no result is written.
     """
 
     def __init__(self, stackargs):
@@ -408,9 +407,10 @@ class Main(newSchedStack):
             else:
                 self._record_addon()
         # A destroy run (DESTROY=True in the run env, the same flag the
-        # worker's on_delete walk keys off) reports the REMOVAL — owner-sync
-        # maps REMOVED to the Convex ``removed`` addon status.
-        self._notify("REMOVED" if destroy else "COMPLETED")
+        # worker's on_delete walk keys off) reports the REMOVAL. An install
+        # reports COMPLETED only after run_complete records the run terminal.
+        if destroy:
+            self._notify("REMOVED")
         return True
 
     def run_notify_failure(self):
