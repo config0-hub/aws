@@ -19,7 +19,9 @@
 #   (Connect: replicationgroup, serverlesscache and user*; replication group
 #   ARN arn:aws:elasticache:<region>:<account>:replicationgroup:<id>)
 #   CreateUser API reference: UserId has a minimum length of 1 and the pattern
-#   [a-zA-Z][a-zA-Z0-9\-]*, and no maximum,
+#   [a-zA-Z][a-zA-Z0-9\-]*, so no underscore; the page states no maximum, but
+#   CreateUser refuses a 47-character id with "User id length must be less
+#   than 40" (CON-11 elasticache story, 2026-10-02),
 #   https://docs.aws.amazon.com/AmazonElastiCache/latest/APIReference/API_CreateUser.html
 #   Access strings: "Role-Based Access Control (RBAC)", "Specifying
 #   Permissions Using an Access String",
@@ -32,8 +34,8 @@ variable "level" {
   type        = string
 }
 
-variable "role_name" {
-  description = "The grant's role name; the ElastiCache user id and user name"
+variable "grant_id" {
+  description = "The grant id, 32 lowercase hex; names the ElastiCache user"
   type        = string
 }
 
@@ -58,9 +60,10 @@ variable "aws_default_region" {
 }
 
 locals {
-  # ElastiCache documents no maximum user id length; the role name fits the
-  # user id pattern as it is.
-  cache_user_id = var.role_name
+  # c0- and the first 16 hex of the grant id: 19 characters, under
+  # CreateUser's 40 and inside its [a-zA-Z][a-zA-Z0-9\-]* pattern. The
+  # elasticache_access stack derives the same name.
+  cache_user_id = "c0-${substr(var.grant_id, 0, 16)}"
 
   arn_prefix = "arn:aws:elasticache:${var.aws_default_region}:${var.aws_account_id}"
   cache_arns = {

@@ -4,8 +4,8 @@ One grant is one internal project, c0-access-<grant id>, and this stack runs
 once for it. The elasticache-access execgroup creates the role
 config0-access-<grant id>, trusted by config0-executor-remote for the grantee
 only until end_time, with one inline policy for elasticache:Connect, and one
-IAM-authenticated ElastiCache user of the same name in the cache's existing
-user group, with the level's access string. The tf_executor write-back
+IAM-authenticated ElastiCache user c0-<first 16 hex of the grant id> in the
+cache's existing user group, with the level's access string. The tf_executor write-back
 records the access_grant row after a successful apply, so the row's existence
 proves the role exists. Names and row fields follow the CON-11 contract (ops
 work-log 2026-09-24/con-11-access-requests/contract.md, section 2b). The
@@ -114,6 +114,10 @@ def run(stackargs):
     stack.verify_variables()
 
     role_name = f"config0-access-{stack.grant_id}"
+    # 19 characters, under CreateUser's 40 and inside its user id pattern (no
+    # underscore); the elasticache-access execgroup's access_policy module
+    # derives the same name.
+    cache_user_id = f"c0-{stack.grant_id[:16]}"
 
     tf = TFConstructor(stack=stack,
                        provider="aws",
@@ -133,8 +137,7 @@ def run(stackargs):
         "cache_name": stack.cache_name,
         "cache_type": stack.cache_type,
         "user_group_id": stack.user_group_id,
-        # ElastiCache documents no user id limit; the role name is the user id.
-        "cache_user_id": role_name,
+        "cache_user_id": cache_user_id,
         "aws_account_id": stack.aws_account_id,
         "region": stack.aws_default_region,
         "stack_fqn": stack.stackargs["stack"],

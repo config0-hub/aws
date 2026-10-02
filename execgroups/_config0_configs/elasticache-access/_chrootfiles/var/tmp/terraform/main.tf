@@ -19,7 +19,7 @@ module "access_policy" {
   source = "./access_policy"
 
   level              = var.level
-  role_name          = module.access_roles.role_name
+  grant_id           = var.grant_id
   cache_name         = var.cache_name
   cache_type         = var.cache_type
   aws_account_id     = var.aws_account_id
