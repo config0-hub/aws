@@ -1,0 +1,14 @@
+desc: Creates an AWS ECS Fargate cluster and service running nginx, with ECS Exec on, task and execution roles, and a CloudWatch log group
+release: 0.1.0
+author: Gary Leong <gary@config0.com>
+license: GPL-3.0
+categories:
+   - aws
+   - ecs
+   - compute
+   - terraform
+tags:
+   - ecs
+   - fargate
+   - aws
+   - terraform
