@@ -47,11 +47,44 @@ module "access_policy" {
   aws_default_region = var.aws_default_region
 }
 
+# An access entry needs the cluster's authentication mode API or
+# API_AND_CONFIG_MAP. Config0 does not change a user's cluster: the role is
+# the first resource every other one reads, so a refused grant creates
+# nothing (CON-11 contract, section 2b).
+#
+# The cluster is read only when it is in the cluster list: a person may delete
+# their cluster before removing the grant, and the removal must still destroy
+# the role (contract, section 9). Preconditions are not evaluated on destroy,
+# so a removal with the cluster gone plans with count 0 and converges.
+data "aws_eks_clusters" "all" {}
+
+data "aws_eks_cluster" "target" {
+  count = contains(data.aws_eks_clusters.all.names, var.eks_cluster) ? 1 : 0
+
+  name = var.eks_cluster
+}
+
+locals {
+  # null when the cluster is not in this account and region.
+  cluster_mode = one(data.aws_eks_cluster.target[*].access_config[0].authentication_mode)
+}
+
 resource "aws_iam_role" "access" {
   name               = module.access_roles.role_name
   assume_role_policy = module.access_roles.trust_policy
 
   tags = var.cloud_tags
+
+  lifecycle {
+    precondition {
+      condition     = length(data.aws_eks_cluster.target) == 1
+      error_message = "EKS cluster ${var.eks_cluster} was not found in account ${var.aws_account_id} region ${var.aws_default_region}."
+    }
+    precondition {
+      condition     = local.cluster_mode == null ? true : contains(["API", "API_AND_CONFIG_MAP"], local.cluster_mode)
+      error_message = "EKS cluster ${var.eks_cluster} has authentication mode ${local.cluster_mode}. The cluster's authentication mode must be API or API_AND_CONFIG_MAP before an access grant; Config0 does not change it."
+    }
+  }
 }
 
 # `aws eks update-kubeconfig` needs eks:DescribeCluster; the access policy
