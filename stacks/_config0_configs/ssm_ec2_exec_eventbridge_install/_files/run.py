@@ -18,22 +18,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from config0_publisher.terraform import TFConstructor
 
 
-def _set_codebuild_image(stack):
-
-    if stack.runtime == "python3.9":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:5.0')
-    elif stack.runtime == "python3.10":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:6.0')
-    elif stack.runtime == "python3.11":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
-    else:
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
-
-
 class Main(newSchedStack):
     """Install the SSM EC2 executor (eventbridge) into the tenant account.
 
@@ -80,22 +64,11 @@ class Main(newSchedStack):
                                 default="python3.12",
                                 types="str")
 
-        self.parse.add_optional(key="compute_type",
-                                types="str",
-                                default="BUILD_GENERAL1_SMALL")
-
-        self.parse.add_optional(key="image_type",
-                                types="str",
-                                default="LINUX_CONTAINER")
-
         self.parse.add_optional(key="build_timeout",
                                 types="int",
                                 default=600)  # MUST stay a literal: stack introspection reconstructs
                                               # declaration lines only, so a module constant here
                                               # resolves to a mock and breaks the scan
-
-        self.parse.add_optional(key="codebuild_role",
-                                default="config0-assume-poweruser")
 
         self.parse.add_optional(key="cloud_tags_hash",
                                 default='null')
@@ -178,8 +151,6 @@ class Main(newSchedStack):
         elif not stack.execution_id:
             stack.set_variable("execution_id", stack.stateful_id)
 
-        _set_codebuild_image(stack)
-
         stack.set_variable("run_share_dir",
                            os.path.join(stack.share_dir,
                            stack.stateful_id))
@@ -206,18 +177,17 @@ class Main(newSchedStack):
             'RUN_SHARE_DIR': stack.run_share_dir,
             'CHROOTFILES_DEST_DIR': stack.run_share_dir,
             'WORKING_DIR': stack.run_share_dir,
-            'BUILD_IMAGE': stack.build_image,
-            'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
             'SCRIPT_NAME': stack.script_name,  # rides the SOPS-sealed env; the engine build
                                                # runs ${SCRIPT_NAME:-docker-to-lambda.sh}
                                                # (codebuild_srcfile_helper.py SRCFILE_BUILD_CMDS)
             'BUILD_TIMEOUT': stack.build_timeout,
             'DIRECT': "True",  # direct-mode engine delivery (execution_mode="direct"):
                                # CodeBuild standard:7.0 privileged + S3 engine.zip,
-                               # required for the docker build inside the container
-                               # (codebuild_srcfile_helper.py reads this via the
-                               # CODEBUILD_PARAMS_HASH channel)
-            'USE_CODEBUILD': "True",
+                               # required for the docker build inside the container.
+                               # codebuild_srcfile_helper.py reads DIRECT and
+                               # BUILD_TIMEOUT from the CODEBUILD_PARAMS_HASH
+                               # channel; execution_target is always codebuild
+                               # on this srcfile path.
             "AWS_DEFAULT_REGION": stack.aws_region,
             # CodeBuild receives the sealed environment, not the parent
             # process environment, so the lifecycle method must be explicit:

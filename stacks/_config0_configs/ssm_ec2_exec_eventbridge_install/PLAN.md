@@ -23,7 +23,7 @@ is now a separate stack, not a second terraform order here).
 
 `stacks/_config0_configs/ssm_ec2_exec_eventbridge_install/_files/run.py`:
 - Inputs: v1-install `aws_region` (tfvar) + aws-lambda-python-codebuild codebuild optionals
-  (runtime=python3.12, compute_type, image_type, build_timeout, codebuild_role, cloud_tags_hash,
+  (runtime=python3.12, build_timeout, cloud_tags_hash,
   stateful_id, execution_id, share_dir, script_name). Plus a **required `s3_bucket`** that the
   config0.yaml supplies as a `selector:::<name>::s3_bucket` expression (resolved to the bucket
   name before the run).

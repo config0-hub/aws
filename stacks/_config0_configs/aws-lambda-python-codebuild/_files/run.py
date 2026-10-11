@@ -17,21 +17,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 
-def _set_codebuild_image(stack):
-
-    if stack.runtime == "python3.9":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:5.0')
-    elif stack.runtime == "python3.10":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:6.0')
-    elif stack.runtime == "python3.11":
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
-    else:
-        stack.set_variable("build_image",
-                           'aws/codebuild/standard:7.0')
-
 def run(stackargs):
 
     import json
@@ -83,17 +68,6 @@ def run(stackargs):
     stack.parse.add_optional(key="script_name",
                              default="docker-to-lambda.sh")  # script name to run in codebuild
 
-    stack.parse.add_optional(key="codebuild_role",
-                             default="config0-assume-poweruser")
-
-    stack.parse.add_optional(key="compute_type",
-                             types="str",
-                             default="BUILD_GENERAL1_SMALL")
-
-    stack.parse.add_optional(key="image_type",
-                             types="str",
-                             default="LINUX_CONTAINER")
-
     stack.parse.add_optional(key="build_timeout",
                              types="int",
                              default=600)  # MUST stay a literal: stack introspection reconstructs
@@ -125,8 +99,6 @@ def run(stackargs):
     # reset exec groups
     stack.reset_execgroups()
 
-    _set_codebuild_image(stack)
-
     # set more stack vars
     stack.set_variable("run_share_dir",
                        os.path.join(stack.share_dir,
@@ -147,13 +119,10 @@ def run(stackargs):
         'RUN_SHARE_DIR': stack.run_share_dir,
         'CHROOTFILES_DEST_DIR': stack.run_share_dir,
         'WORKING_DIR': stack.run_share_dir,
-        'BUILD_IMAGE': stack.build_image,
-        'CODEBUILD_COMPUTE_TYPE': stack.compute_type,
         'SCRIPT_NAME': stack.script_name,  # rides the SOPS-sealed env; the engine build
                                            # runs ${SCRIPT_NAME:-docker-to-lambda.sh}
                                            # (codebuild_srcfile_helper.py SRCFILE_BUILD_CMDS)
         'BUILD_TIMEOUT': stack.build_timeout,
-        'USE_CODEBUILD': "True",
         "AWS_DEFAULT_REGION": stack.aws_default_region
     }
 

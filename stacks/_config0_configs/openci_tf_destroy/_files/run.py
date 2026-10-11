@@ -171,10 +171,8 @@ def _insert_tofu_stage(stack, stage, build_timeout, human_description):
         "RUN_SHARE_DIR": run_share_dir,
         "CHROOTFILES_DEST_DIR": run_share_dir,
         "WORKING_DIR": run_share_dir,
-        "CODEBUILD_COMPUTE_TYPE": stack.compute_type,
         "SCRIPT_NAME": "openci-tf-addon-tofu.py",
         "BUILD_TIMEOUT": build_timeout,
-        "USE_CODEBUILD": "True",
     })
 
     env_vars = {
@@ -221,12 +219,9 @@ def _insert_image_copy(stack):
         "RUN_SHARE_DIR": run_share_dir,
         "CHROOTFILES_DEST_DIR": run_share_dir,
         "WORKING_DIR": run_share_dir,
-        "BUILD_IMAGE": "aws/codebuild/standard:7.0",
-        "CODEBUILD_COMPUTE_TYPE": stack.compute_type,
         "SCRIPT_NAME": "copy-ghcr-to-ecr.sh",
         "BUILD_TIMEOUT": stack.build_timeout,
         "DIRECT": "True",
-        "USE_CODEBUILD": "True",
         "AWS_DEFAULT_REGION": stack.aws_default_region,
     }
 
@@ -344,7 +339,6 @@ def run(stackargs):
         default="7a9978c2b84fb109570c110bbeb7be6f5d9403ef",
         types="str",
     )
-    stack.parse.add_optional(key="compute_type", types="str", default="BUILD_GENERAL1_SMALL")
     stack.parse.add_optional(key="build_timeout", types="int", default=1200)
     stack.parse.add_optional(key="tofu_version", types="str", default="1.12.6")
     stack.parse.add_optional(key="cloud_tags_hash", default='null')

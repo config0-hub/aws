@@ -30,10 +30,7 @@ This stack creates an AWS Lambda function using AWS CodeBuild to package your Py
 | stateful_id | Stateful ID for storing the resource code/state | _random |
 | share_dir | Directory for sharing files between containers | /var/tmp/share |
 | script_name | Script name to run in codebuild | docker-to-lambda.sh |
-| codebuild_role | IAM role for CodeBuild service | config0-assume-poweruser |
-| compute_type | Configuration for compute type | BUILD_GENERAL1_SMALL |
-| image_type | Configuration for image type | LINUX_CONTAINER |
-| build_timeout | Configuration for build timeout | 900 |
+| build_timeout | Configuration for build timeout | 600 |
 
 ## Dependencies
 

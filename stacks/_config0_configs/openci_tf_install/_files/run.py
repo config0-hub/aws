@@ -105,7 +105,6 @@ class Main(newSchedStack):
 
         # codebuild framing for the image copy and the tofu stages (mirrors
         # ssm_ec2_exec_eventbridge_install's lambda_build order)
-        self.parse.add_optional(key="compute_type", types="str", default="BUILD_GENERAL1_SMALL")
         self.parse.add_optional(key="build_timeout", types="int", default=1200)
         # openci-tf needs tofu >= 1.10 (S3 native lock file); the engine image
         # pins an older one, so the tofu stages install this release themselves.
@@ -274,10 +273,8 @@ class Main(newSchedStack):
             "RUN_SHARE_DIR": run_share_dir,
             "CHROOTFILES_DEST_DIR": run_share_dir,
             "WORKING_DIR": run_share_dir,
-            "CODEBUILD_COMPUTE_TYPE": self.stack.compute_type,
             "SCRIPT_NAME": "openci-tf-addon-tofu.py",
             "BUILD_TIMEOUT": build_timeout,
-            "USE_CODEBUILD": "True",
         })
 
         env_vars = {
@@ -377,12 +374,9 @@ class Main(newSchedStack):
             "RUN_SHARE_DIR": run_share_dir,
             "CHROOTFILES_DEST_DIR": run_share_dir,
             "WORKING_DIR": run_share_dir,
-            "BUILD_IMAGE": "aws/codebuild/standard:7.0",
-            "CODEBUILD_COMPUTE_TYPE": self.stack.compute_type,
             "SCRIPT_NAME": "copy-ghcr-to-ecr.sh",
             "BUILD_TIMEOUT": self.stack.build_timeout,
             "DIRECT": "True",  # privileged CodeBuild - docker pull/push inside
-            "USE_CODEBUILD": "True",
             "AWS_DEFAULT_REGION": self.stack.aws_default_region,
             # CodeBuild receives a sealed environment rather than the parent
             # process environment, so the lifecycle method must be explicit.
