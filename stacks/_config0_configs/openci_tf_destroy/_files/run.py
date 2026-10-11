@@ -174,6 +174,8 @@ def _insert_tofu_stage(stack, stage, build_timeout, human_description):
         "SCRIPT_NAME": "openci-tf-addon-tofu.py",
         "BUILD_TIMEOUT": build_timeout,
     })
+    if stack.get_attr("compute_type"):
+        build_envs["BUILD_COMPUTE_TYPE"] = stack.compute_type
 
     env_vars = {
         "CODEBUILD_PARAMS_HASH": stack.serialize({
@@ -224,6 +226,8 @@ def _insert_image_copy(stack):
         "DIRECT": "True",
         "AWS_DEFAULT_REGION": stack.aws_default_region,
     }
+    if stack.get_attr("compute_type"):
+        build_envs["BUILD_COMPUTE_TYPE"] = stack.compute_type
 
     env_vars = {
         "CODEBUILD_PARAMS_HASH": stack.serialize({
@@ -340,6 +344,10 @@ def run(stackargs):
         types="str",
     )
     stack.parse.add_optional(key="build_timeout", types="int", default=1200)
+    # CodeBuild compute size for the image copy and the tofu stages (AWS
+    # values: BUILD_GENERAL1_SMALL|MEDIUM|LARGE|XLARGE|2XLARGE); no default,
+    # the engine's own project default applies when unset.
+    stack.parse.add_optional(key="compute_type", types="str")
     stack.parse.add_optional(key="tofu_version", types="str", default="1.12.6")
     stack.parse.add_optional(key="cloud_tags_hash", default='null')
     stack.parse.add_optional(key="share_dir", default="/var/tmp/share")

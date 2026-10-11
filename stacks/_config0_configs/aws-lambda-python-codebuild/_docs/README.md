@@ -31,6 +31,7 @@ This stack creates an AWS Lambda function using AWS CodeBuild to package your Py
 | share_dir | Directory for sharing files between containers | /var/tmp/share |
 | script_name | Script name to run in codebuild | docker-to-lambda.sh |
 | build_timeout | Configuration for build timeout | 600 |
+| compute_type | CodeBuild compute size for the build order (AWS BUILD_GENERAL1_SMALL/MEDIUM/LARGE/XLARGE/2XLARGE); unset = the engine's default | &nbsp; |
 
 ## Dependencies
 

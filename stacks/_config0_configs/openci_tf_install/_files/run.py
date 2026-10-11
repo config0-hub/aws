@@ -106,6 +106,10 @@ class Main(newSchedStack):
         # codebuild framing for the image copy and the tofu stages (mirrors
         # ssm_ec2_exec_eventbridge_install's lambda_build order)
         self.parse.add_optional(key="build_timeout", types="int", default=1200)
+        # CodeBuild compute size for the image copy and the tofu stages (AWS
+        # values: BUILD_GENERAL1_SMALL|MEDIUM|LARGE|XLARGE|2XLARGE); no
+        # default, the engine's own project default applies when unset.
+        self.parse.add_optional(key="compute_type", types="str")
         # openci-tf needs tofu >= 1.10 (S3 native lock file); the engine image
         # pins an older one, so the tofu stages install this release themselves.
         # Default = what openci-tf's own docker/Dockerfile.test pins.
@@ -276,6 +280,8 @@ class Main(newSchedStack):
             "SCRIPT_NAME": "openci-tf-addon-tofu.py",
             "BUILD_TIMEOUT": build_timeout,
         })
+        if self.stack.get_attr("compute_type"):
+            build_envs["BUILD_COMPUTE_TYPE"] = self.stack.compute_type
 
         env_vars = {
             "CODEBUILD_PARAMS_HASH": self.stack.serialize({
@@ -384,6 +390,8 @@ class Main(newSchedStack):
             if os.environ.get("DESTROY", "").lower() in ("true", "1")
             else "create",
         }
+        if self.stack.get_attr("compute_type"):
+            build_envs["BUILD_COMPUTE_TYPE"] = self.stack.compute_type
 
         env_vars = {
             "CODEBUILD_PARAMS_HASH": self.stack.serialize({

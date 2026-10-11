@@ -74,6 +74,12 @@ def run(stackargs):
                                            # declaration lines only, so a module constant here
                                            # resolves to a mock and breaks the scan
 
+    # CodeBuild compute size for the build order (AWS values:
+    # BUILD_GENERAL1_SMALL|MEDIUM|LARGE|XLARGE|2XLARGE); no default, the
+    # engine's own project default applies when unset.
+    stack.parse.add_optional(key="compute_type",
+                             types="str")
+
     # declare execution groups
     stack.add_execgroup("config0-hub:::aws::py_to_lambda-codebuild",
                         "py_to_lambda")
@@ -125,6 +131,11 @@ def run(stackargs):
         'BUILD_TIMEOUT': stack.build_timeout,
         "AWS_DEFAULT_REGION": stack.aws_default_region
     }
+
+    # Rides the CODEBUILD_PARAMS_HASH channel beside BUILD_TIMEOUT; the
+    # publisher sends it as the engine payload's compute_type.
+    if stack.get_attr("compute_type"):
+        build_envs['BUILD_COMPUTE_TYPE'] = stack.compute_type
 
     # we need to declare app initially - lambda app
     env_vars = {

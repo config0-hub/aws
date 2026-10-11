@@ -70,6 +70,12 @@ class Main(newSchedStack):
                                               # declaration lines only, so a module constant here
                                               # resolves to a mock and breaks the scan
 
+        # CodeBuild compute size for the lambda_build order (AWS values:
+        # BUILD_GENERAL1_SMALL|MEDIUM|LARGE|XLARGE|2XLARGE); no default, the
+        # engine's own project default applies when unset.
+        self.parse.add_optional(key="compute_type",
+                                types="str")
+
         self.parse.add_optional(key="cloud_tags_hash",
                                 default='null')
 
@@ -198,6 +204,11 @@ class Main(newSchedStack):
             if os.environ.get("DESTROY", "").lower() in ("true", "1")
             else "create",
         }
+
+        # Rides the CODEBUILD_PARAMS_HASH channel beside BUILD_TIMEOUT; the
+        # publisher sends it as the engine payload's compute_type.
+        if stack.get_attr("compute_type"):
+            build_envs['BUILD_COMPUTE_TYPE'] = stack.compute_type
 
         env_vars = {
             'CODEBUILD_PARAMS_HASH': stack.serialize({
