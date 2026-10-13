@@ -18,16 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 class Main(newSchedStack):
     """Write a finished project's execution groups into the user's GitOps
-    repo as two direct commits on main: the payload folders, then the managed
-    private replay stack (plan "Write-back" contract; replay plan phase 2
+    repo as two direct commits on main: the day-one code folders, then the managed
+    private replay stack (plan "Day-one code" contract; replay plan phase 2
     build step 4, human decision 2026-09-14: no pull request).
 
     One work job plus the gitops status-producer notifiers:
 
-        writeback        `config0 gitops writeback ...` — the CLI verb does
+        day_one_code        `config0 gitops day-one-code ...` — the CLI verb does
                          everything: frontier check, replay-graph join,
                          translation, repo tree from the source zips and the
-                         execgroups' published blobs, the payload commit and
+                         execgroups' published blobs, the day-one code commit and
                          the managed-stack commit pushed directly to main,
                          allowed_state_pairs registration, the `pipeline`
                          record. Idempotent on `<project_id>:<frontier_hash>`
@@ -47,7 +47,7 @@ class Main(newSchedStack):
         # The SOURCE project's identity, FROZEN at its first dispatch —
         # saas-api passes it from the project_config row's data.gitops.
         # Not "project_id" / "project_name": both are Stack built-ins bound to
-        # the DISPATCH project (the internal c0-writeback-<name> project this
+        # the DISPATCH project (the internal c0-day-one-code-<name> project this
         # stack runs under) and the runtime refuses declared keys that shadow
         # one. Under the built-in name the frontier check targeted the
         # dispatch project and could never see itself completed (defect 34).
@@ -86,7 +86,7 @@ class Main(newSchedStack):
             f"workflow_id={self.stack.workflow_id}",
             f"owner={self.stack.owner_id}",
             "kind=run_result",
-            f"key=writeback:{self.stack.gitops_project_id}",
+            f"key=day-one-code:{self.stack.gitops_project_id}",
             f"attempt_id={self.stack.attempt_id}",
             f"status={status}",
             f"resource_id={self.stack.pipeline_resource_id}",
@@ -97,10 +97,10 @@ class Main(newSchedStack):
         self.stack.add_external_cmd(
             cmd=" ".join(shlex.quote(part) for part in parts),
             role="gitops/notifier/execute",
-            human_description=f"gitops write-back {status} notifier",
+            human_description=f"gitops day-one code {status} notifier",
             display=True)
 
-    def run_writeback(self):
+    def run_day_one_code(self):
         import shlex
 
         self.stack.init_variables()
@@ -108,7 +108,7 @@ class Main(newSchedStack):
         self._init_common()
 
         parts = [
-            "config0", "gitops", "writeback",
+            "config0", "gitops", "day-one-code",
             f"project_id={self.stack.gitops_project_id}",
             f"project_name={self.stack.gitops_project_name}",
             f"owner_id={self.stack.owner_id}",
@@ -119,7 +119,7 @@ class Main(newSchedStack):
         self.stack.add_external_cmd(
             cmd=" ".join(shlex.quote(part) for part in parts),
             role="gitops/tenant/execute",
-            human_description="gitops write-back: assemble the repo tree and commit to main",
+            human_description="gitops day-one code: assemble the repo tree and commit to main",
             display=True)
         return True
 
@@ -134,26 +134,26 @@ class Main(newSchedStack):
         self.stack.init_variables()
         self.stack.verify_variables()
         self._init_common()
-        self._notify("FAILED", error="gitops write-back failed")
+        self._notify("FAILED", error="gitops day-one code failed")
         return True
 
     def run(self):
-        self.add_job("writeback")
+        self.add_job("day_one_code")
         self.add_job("notify_success")
         self.add_job("notify_failure")
 
         return self.finalize_jobs()
 
     def schedule(self):
-        # writeback -> notify_success; every failure exit reaches
+        # day_one_code -> notify_success; every failure exit reaches
         # notify_failure through on_failure. Nothing to destroy: the commits
         # and pipeline record outlive the run by design (plan
         # "Removal rules": retained GitHub history; records swept elsewhere).
         sched = self.new_schedule()
-        sched.job = "writeback"
+        sched.job = "day_one_code"
         sched.archive.timeout = 1800
         sched.archive.timewait = 30
-        sched.human_description = "gitops write-back: repo tree + commits on main"
+        sched.human_description = "gitops day-one code: repo tree + commits on main"
         sched.on_success = ["notify_success"]
         sched.on_failure = ["notify_failure"]
         self.add_schedule()
@@ -162,7 +162,7 @@ class Main(newSchedStack):
         sched.job = "notify_success"
         sched.archive.timeout = 600
         sched.archive.timewait = 30
-        sched.human_description = "gitops write-back: success notifier"
+        sched.human_description = "gitops day-one code: success notifier"
         sched.on_failure = ["notify_failure"]
         self.add_schedule()
 
@@ -170,7 +170,7 @@ class Main(newSchedStack):
         sched.job = "notify_failure"
         sched.archive.timeout = 600
         sched.archive.timewait = 30
-        sched.human_description = "gitops write-back: failure notifier"
+        sched.human_description = "gitops day-one code: failure notifier"
         self.add_schedule()
 
         return self.get_schedules()

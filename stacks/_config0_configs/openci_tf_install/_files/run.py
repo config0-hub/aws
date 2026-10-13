@@ -532,7 +532,7 @@ class Main(newSchedStack):
         # destroy chain (the settings table is about to go).
         #
         # role: the verb writes openci-tf-settings in the run's target account,
-        # exactly what the write-back's register_state_pairs does. The worker
+        # exactly what the day-one code's register_state_pairs does. The worker
         # runs gitops/tenant/execute under the target session
         # (config0-executor-remote; config0-worker executor.go engineBoundRole);
         # the default external/cli/execute role runs under the worker Lambda's

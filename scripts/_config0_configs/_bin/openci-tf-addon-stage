@@ -62,7 +62,7 @@ Stages (create):
 
 Stages (destroy), placed by openci_tf_destroy in the contract order
 (registration, deploy, image, ECR repository, SSM parameters LAST):
-    register            github_webhook rows: close recorded write-back /
+    register            github_webhook rows: close recorded day-one code /
                         mutation PRs, delete each webhook (by its recorded hook
                         id, or - for a row whose install failed before the hook
                         id was recorded - by the callback URL the row carries);
@@ -641,7 +641,7 @@ class OpenciTfAddonStage(ResourceCmdHelper):
         return rows
 
     def _pipeline_pr_numbers(self, repo):
-        # The write-back PR is recorded on the repo's pipeline row; the dedicated
+        # The day-one code PR is recorded on the repo's pipeline row; the dedicated
         # mutation PRs are recorded on pipeline_run rows. Enumerate the latter by
         # this install's TRIGGER_ID - stamped on every pipeline_run row by the
         # saas-api dispatcher (build_pipeline_run_values) - NOT by a project_id
@@ -764,7 +764,7 @@ class OpenciTfAddonStage(ResourceCmdHelper):
                     "refusing to skip GitHub cleanup"
                 )
             # PRs must close while the token still exists. This includes the
-            # write-back PRs on pipeline rows and dedicated mutation PRs on
+            # day-one code PRs on pipeline rows and dedicated mutation PRs on
             # pipeline_run rows.
             for repo in sorted({data["github_repo"] for data in webhooks}):
                 self._close_pipeline_prs(repo, token, self._pipeline_pr_numbers(repo))

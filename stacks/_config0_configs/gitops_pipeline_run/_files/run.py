@@ -20,7 +20,7 @@ class Main(newSchedStack):
     """Run one day-2 pipeline action (plan phase 6, "Execution, one model").
 
     One work job plus the gitops status-producer notifiers (the same shape as
-    ``gitops_writeback``):
+    ``gitops_day_one_code``):
 
         pipeline_run     `config0 gitops pipeline-run ...` — the CLI verb does
                          everything: reads the `pipeline` / `pipeline_run` /
@@ -29,7 +29,7 @@ class Main(newSchedStack):
                          (plan/drift/report) as one SigV4 POST /runs with the
                          status polled from openci-tf's run registry, drives
                          mutations (apply/destroy) through the PR state
-                         machine on the write-back PR, and mints steps of kind
+                         machine on the day-one code PR, and mints steps of kind
                          ssm_ec2_exec onto the existing `orders add host`
                          path. Every openci run id / comment id / order id is
                          persisted on the `pipeline_run` record before the
