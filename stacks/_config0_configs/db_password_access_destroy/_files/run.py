@@ -7,18 +7,23 @@ generic callback_delete ones: parallel_ids names the one grant schedule. A
 host order has no destroy of its own, so this stack first runs the
 db-password-access-user script group with METHOD=destroy on the same host,
 which drops the user c0_<first 16 hex of the grant id> (a missing user is
-done). The admin credentials are the grant run's own sealed secret rows, read
-through secret_refs by the grant schedule id; the removal needs no input
-variables. When an admin row is missing but the grant's access_grant row
-exists, the removal fails loud: that row is written only after the create
+done). The removal needs no input variables. On postgres and mysql, an RDS
+database, the script logs on with the admin login it reads from the secret
+master_user_secret_arn names, the grant's persistent argument, so every
+removal places the drop, a retry included. On mongodb the admin credentials
+are the grant run's own sealed secret rows, read through secret_refs by the
+grant schedule id. When an admin row is missing but the grant's access_grant
+row exists, the removal fails loud: that row is written only after the create
 script ran, so a drop is owed. When the access_grant row is absent too the
 drop is skipped: the create never reached the host, or an earlier removal
 already dropped the user and deleted the rows. Then, exactly as callback_delete does, delete_resources_by_time
 removes the record-only access_grant row and the secret rows,
 delete_schedules removes the schedules, and the final callback removes the
 project's SaaS traces. The drop runs first because the generic delete also
-removes the secret rows it reads. The password's SSM copy is left to its own
-expiry at the grant's end time.
+removes the secret rows it reads. The password's secret row names its SSM
+copy, so delete_resources_by_time removes that row after its other deletes,
+as a teardown: config0 resource remove deletes the SSM parameter, then the
+row.
 
 With keep_database_user true (a removal whose drop cannot log on) no drop
 order is placed: the database user stays, and the run logs a warning naming
@@ -30,17 +35,22 @@ Names follow the CON-11 contract (ops work-log
 
 import json
 
-# The admin credential secret rows the grant run sealed, and their env names.
+# The admin credential secret rows the grant run sealed (mongodb), and their
+# env names.
 ADMIN_CREDENTIALS = {
     "db_admin_user": "DB_ADMIN_USER",
     "db_admin_password": "DB_ADMIN_PASSWORD",
 }
 
+# The engines of an RDS database: the script reads its admin login from the
+# secret master_user_secret_arn names.
+RDS_ENGINES = ("postgres", "mysql")
 
-def _drop_user(stack, grant_schedule_id, db_user):
-    """Run the script group with METHOD=destroy on the grant's host, reading
-    the grant run's sealed admin secrets by the grant schedule id, and wait
-    for it before the generic delete."""
+
+def _drop_user(stack, db_user, admin_env, secret_refs=None):
+    """Run the script group with METHOD=destroy on the grant's host, logging
+    on with the admin login ``admin_env`` names (and ``secret_refs`` reads
+    back), and wait for it before the generic delete."""
     env_vars = {
         "METHOD": "destroy",
         "DB_ENGINE": stack.db_engine,
@@ -49,11 +59,8 @@ def _drop_user(stack, grant_schedule_id, db_user):
         "DB_NAME": stack.db_name,
         "DB_LEVEL": stack.level,
         "DB_USER": db_user,
+        **admin_env,
     }
-    secret_refs = {}
-    for key, env_name in ADMIN_CREDENTIALS.items():
-        env_vars[env_name] = f"secret:::{key}"
-        secret_refs[env_name] = {"name": key, "source": "resource", "schedule_id": grant_schedule_id}
 
     stack.add_groups_to_host(display=True,
                              human_description=f"Drop database user {db_user} on {stack.db_endpoint}",
@@ -64,6 +71,42 @@ def _drop_user(stack, grant_schedule_id, db_user):
                              groups=stack.db_user_group)
 
     stack.wait_all()
+
+
+def _drop_user_on_rds(stack, db_user):
+    """An RDS database: the drop logs on with the login in the secret
+    master_user_secret_arn names, so no sealed row gates it."""
+    if not stack.get_attr("master_user_secret_arn"):
+        raise ValueError(f"master_user_secret_arn is missing from the grant's arguments: "
+                         f"database user {db_user} stays on {stack.db_endpoint}; only a "
+                         f"removal with keep_database_user can leave it")
+    _drop_user(stack, db_user, {"DB_MASTER_USER_SECRET_ARN": stack.master_user_secret_arn})
+
+
+def _drop_user_on_mongodb(stack, grant_schedule_id, db_user):
+    """mongodb: the drop reads the grant run's sealed admin secrets by the
+    grant schedule id."""
+    sealed = {row["name"] for row in stack.get_resource(resource_type="secret",
+                                                        ref_schedule_id=grant_schedule_id,
+                                                        overlay_tfstate=False)}
+    missing = sorted(set(ADMIN_CREDENTIALS) - sealed)
+    if not missing:
+        _drop_user(stack, db_user,
+                   {env_name: f"secret:::{key}" for key, env_name in ADMIN_CREDENTIALS.items()},
+                   {env_name: {"name": key, "source": "resource", "schedule_id": grant_schedule_id}
+                    for key, env_name in ADMIN_CREDENTIALS.items()})
+    elif stack.get_resource(resource_type="access_grant",
+                            ref_schedule_id=grant_schedule_id,
+                            overlay_tfstate=False):
+        # The access_grant row is written only after the create script
+        # ran, so a drop is owed and a missing admin row cannot skip it.
+        raise ValueError(f"sealed admin secret row(s) {missing} missing on grant schedule "
+                         f"{grant_schedule_id} while its access_grant row exists: database "
+                         f"user {db_user} stays on {stack.db_endpoint}; only a removal with "
+                         f"keep_database_user can leave it")
+    # Neither an admin row nor the access_grant row: the create never
+    # reached the host, or an earlier removal already dropped the user and
+    # its generic delete took the rows, so a retry converges.
 
 
 def run(stackargs):
@@ -116,6 +159,12 @@ def run(stackargs):
     stack.parse.add_required(key="install_name",
                              types="str")
 
+    # postgres and mysql: the secret that holds the database's admin login.
+    # Read only by a removal that drops the user.
+    stack.parse.add_optional(key="master_user_secret_arn",
+                             types="str",
+                             default=None)
+
     stack.add_hostgroups("config0-hub:::aws::db-password-access-user",
                          "db_user_group")
 
@@ -135,25 +184,10 @@ def run(stackargs):
     if stack.keep_database_user:
         stack.logger.warning(f"keep_database_user: database user {db_user} stays on "
                              f"{stack.db_endpoint}; no drop order is placed")
+    elif stack.db_engine in RDS_ENGINES:
+        _drop_user_on_rds(stack, db_user)
     else:
-        sealed = {row["name"] for row in stack.get_resource(resource_type="secret",
-                                                            ref_schedule_id=grant_schedule_id,
-                                                            overlay_tfstate=False)}
-        missing = sorted(set(ADMIN_CREDENTIALS) - sealed)
-        if not missing:
-            _drop_user(stack, grant_schedule_id, db_user)
-        elif stack.get_resource(resource_type="access_grant",
-                                ref_schedule_id=grant_schedule_id,
-                                overlay_tfstate=False):
-            # The access_grant row is written only after the create script
-            # ran, so a drop is owed and a missing admin row cannot skip it.
-            raise ValueError(f"sealed admin secret row(s) {missing} missing on grant schedule "
-                             f"{grant_schedule_id} while its access_grant row exists: database "
-                             f"user {db_user} stays on {stack.db_endpoint}; only a removal with "
-                             f"keep_database_user can leave it")
-        # Neither an admin row nor the access_grant row: the create never
-        # reached the host, or an earlier removal already dropped the user and
-        # its generic delete took the rows, so a retry converges.
+        _drop_user_on_mongodb(stack, grant_schedule_id, db_user)
 
     # From here on, callback_delete's chain.
     ref_schedule_ids = stack.parallel_ids[:]

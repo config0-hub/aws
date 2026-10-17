@@ -45,6 +45,7 @@
 # flush: tofu's colored output ends with its ANSI reset AFTER the final
 # newline, which put the PRE marker mid-line and the finalizer read "found 0".
 # ---------------------------------------------------------------------------
+import hashlib
 import json
 import os
 import re
@@ -66,15 +67,30 @@ def env(name, default=None):
 
 
 def install_tofu(version, bin_dir):
-    """Put tofu:{version} on PATH (urllib + zipfile: the tfinstaller pattern)."""
+    """Put tofu:{version} on PATH (urllib + zipfile: the tfinstaller pattern).
+
+    The zip is checked against its entry in the release's
+    tofu_<version>_SHA256SUMS before use. A missing file, a missing entry or a
+    mismatch fails the stage."""
     os.makedirs(bin_dir, exist_ok=True)
-    url = (
-        "https://github.com/opentofu/opentofu/releases/download/"
-        f"v{version}/tofu_{version}_linux_amd64.zip"
-    )
+    release = f"https://github.com/opentofu/opentofu/releases/download/v{version}"
+    archive = f"tofu_{version}_linux_amd64.zip"
+    sums_url = f"{release}/tofu_{version}_SHA256SUMS"
+    with urllib.request.urlopen(sums_url, timeout=120) as src:
+        sums = src.read().decode()
+    expected = [line.split()[0] for line in sums.splitlines() if line.split()[1:] == [archive]]
+    if len(expected) != 1:
+        raise ValueError(f"{sums_url} lists {len(expected)} entries for {archive}, not one")
     zip_path = os.path.join(bin_dir, f"tofu_{version}.zip")
-    with urllib.request.urlopen(url, timeout=120) as src, open(zip_path, "wb") as out:
+    with urllib.request.urlopen(f"{release}/{archive}", timeout=120) as src, open(zip_path, "wb") as out:
         shutil.copyfileobj(src, out)
+    digest = hashlib.sha256()
+    with open(zip_path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    if digest.hexdigest() != expected[0]:
+        os.remove(zip_path)
+        raise ValueError(f"sha256 of {archive} is {digest.hexdigest()}, {sums_url} lists {expected[0]}")
     dst = os.path.join(bin_dir, "tofu")
     with zipfile.ZipFile(zip_path) as archive, archive.open("tofu") as member, open(dst, "wb") as out:
         shutil.copyfileobj(member, out)

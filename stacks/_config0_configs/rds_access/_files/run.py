@@ -11,11 +11,11 @@ policy for rds-db:connect as that user. The user comes first, so a failed
 script leaves no role. The tf_executor write-back records the access_grant row
 after a successful apply, so the row's existence proves the role exists.
 
-The admin credentials arrive as input-variable selectors, never literals:
-db_admin_user and db_admin_password each name a key of the grant project's
-resolved input variables. The stack seals both values as this schedule's
-secret rows and the host order reads them by secret:::<name>, so no order row
-or log carries them.
+The admin login never enters Config0. master_user_secret_arn is the target rds
+row's: the Secrets Manager secret where RDS keeps the database's master user
+name and password, and rotates them every seven days. The host script reads
+the login from that secret on every run, so no order row, secret row, input
+variable or log carries it; only the ARN travels.
 
 Names and row fields follow the CON-11 contract (ops work-log
 2026-09-24/con-11-access-requests/contract.md, section 2b). Removing the grant
@@ -34,11 +34,16 @@ TARGET_KIND = "rds"
 GRANT_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")
 END_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
-# The admin credential arguments and the secret each is sealed as.
-ADMIN_CREDENTIALS = {
-    "db_admin_user": "DB_ADMIN_USER",
-    "db_admin_password": "DB_ADMIN_PASSWORD",
-}
+
+def _check_master_user_secret_arn(stack):
+    """The secret RDS made for a DB instance's master login, in the grant's
+    account and region: RDS names it rds!db-<id>, and the host's instance role
+    reads only those."""
+    prefix = (f"arn:aws:secretsmanager:{stack.aws_default_region}:{stack.aws_account_id}"
+              ":secret:rds!db-")
+    if not stack.master_user_secret_arn.startswith(prefix):
+        raise ValueError(f'master_user_secret_arn must start with "{prefix}", '
+                         f'got "{stack.master_user_secret_arn}"')
 
 
 def _check_grant(stack):
@@ -50,16 +55,6 @@ def _check_grant(stack):
     # a grant on it would reach every database on the instance.
     if "%" in stack.db_name:
         raise ValueError(f'db_name must not contain "%", got "{stack.db_name}"')
-
-
-def _admin_credential(stack, key):
-    """The value the argument ``key`` selects from the grant project's
-    resolved input variables. The error never echoes the argument: a literal
-    credential passed by mistake stays out of the log."""
-    value = stack.inputvars.get(stack.get_attr(key))
-    if not value:
-        raise ValueError(f"{key} names no key of the grant project's input variables")
-    return value
 
 
 def run(stackargs):
@@ -111,10 +106,8 @@ def run(stackargs):
     stack.parse.add_required(key="install_name",
                              types="str")
 
-    stack.parse.add_required(key="db_admin_user",
-                             types="str")
-
-    stack.parse.add_required(key="db_admin_password",
+    # the target rds row's: the secret that holds the database's admin login
+    stack.parse.add_required(key="master_user_secret_arn",
                              types="str")
 
     stack.parse.add_required(key="aws_default_region",
@@ -139,6 +132,7 @@ def run(stackargs):
     stack.init_substacks()
 
     _check_grant(stack)
+    _check_master_user_secret_arn(stack)
 
     stack.set_variable("timeout", 600)
 
@@ -149,12 +143,7 @@ def run(stackargs):
     # access_policy module derives the same name.
     db_user = f"c0_{stack.grant_id[:16]}"
 
-    # Record-only secret rows; the host order reads them back. No SSM copy.
-    for key in ADMIN_CREDENTIALS:
-        stack.add_secret(name=key,
-                         value=_admin_credential(stack, key),
-                         insert_ssm=False)
-
+    # The script logs on with the login it reads from the secret.
     env_vars = {
         "METHOD": "create",
         "DB_ENGINE": stack.db_engine,
@@ -163,9 +152,8 @@ def run(stackargs):
         "DB_NAME": stack.db_name,
         "DB_LEVEL": stack.level,
         "DB_USER": db_user,
+        "DB_MASTER_USER_SECRET_ARN": stack.master_user_secret_arn,
     }
-    for key, env_name in ADMIN_CREDENTIALS.items():
-        env_vars[env_name] = f"secret:::{key}"
 
     stack.add_groups_to_host(display=True,
                              human_description=f"Create database user {db_user} on {stack.db_endpoint}",

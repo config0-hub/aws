@@ -15,11 +15,16 @@ ssm_ec2_exec_eventbridge_install add-on writes its addon row. QHost's
 access-session reads the password back through the hub's ssm_read for the
 grantee.
 
-The admin credentials arrive as input-variable selectors, never literals:
-db_admin_user and db_admin_password each name a key of the grant project's
-resolved input variables. The stack seals both values as this schedule's
-record-only secret rows, and the host order reads them and the password by
-secret:::<name>, so no order row or log carries a credential.
+The admin login, by engine. postgres and mysql are an RDS database:
+master_user_secret_arn is the target rds row's, the Secrets Manager secret
+where RDS keeps the master user name and password and rotates them every
+seven days, and the host script reads the login from it on every run, so
+Config0 seals none. mongodb: the admin credentials arrive as input-variable
+selectors, never literals: db_admin_user and db_admin_password each name a
+key of the grant project's resolved input variables, and the stack seals both
+values as this schedule's record-only secret rows. The host order reads them
+and the password by secret:::<name>, so no order row or log carries a
+credential.
 
 Names and row fields follow the CON-11 contract (ops work-log
 2026-09-24/con-11-access-requests/contract.md, section 2b). No engine expires
@@ -40,11 +45,15 @@ TARGET_KIND = "db_password"
 GRANT_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")
 END_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
-# The admin credential arguments and the secret each is sealed as.
+# The admin credential arguments and the secret each is sealed as (mongodb).
 ADMIN_CREDENTIALS = {
     "db_admin_user": "DB_ADMIN_USER",
     "db_admin_password": "DB_ADMIN_PASSWORD",
 }
+
+# The engines of an RDS database: the script reads its admin login from the
+# secret master_user_secret_arn names.
+RDS_ENGINES = ("postgres", "mysql")
 
 # The grant user's password: the secret it is sealed as, its length, and
 # its alphabet, the [a-z0-9] the db-password-access-user script checks.
@@ -80,6 +89,33 @@ def _admin_credential(stack, key):
     if not value:
         raise ValueError(f"{key} names no key of the grant project's input variables")
     return value
+
+
+def _check_master_user_secret_arn(stack):
+    """The secret RDS made for a DB instance's master login, in the grant's
+    account and region: RDS names it rds!db-<id>, and the host's instance role
+    reads only those."""
+    prefix = (f"arn:aws:secretsmanager:{stack.aws_default_region}:{stack.aws_account_id}"
+              ":secret:rds!db-")
+    arn = stack.get_attr("master_user_secret_arn") or ""
+    if not arn.startswith(prefix):
+        raise ValueError(f'db_engine {stack.db_engine}: master_user_secret_arn must start '
+                         f'with "{prefix}", got "{arn}"')
+
+
+def _admin_login_env(stack):
+    """The host order's admin login env vars. An RDS database: the ARN of the
+    secret the script reads the login from, nothing sealed. mongodb: the
+    input-variable selectors' values, sealed as record-only secret rows (no
+    SSM copy) that the host order reads back."""
+    if stack.db_engine in RDS_ENGINES:
+        _check_master_user_secret_arn(stack)
+        return {"DB_MASTER_USER_SECRET_ARN": stack.master_user_secret_arn}
+    for key in ADMIN_CREDENTIALS:
+        stack.add_secret(name=key,
+                         value=_admin_credential(stack, key),
+                         insert_ssm=False)
+    return {env_name: f"secret:::{key}" for key, env_name in ADMIN_CREDENTIALS.items()}
 
 
 def _draw_password():
@@ -135,11 +171,20 @@ class Main(newSchedStack):
         self.parse.add_required(key="install_name",
                                 types="str")
 
-        self.parse.add_required(key="db_admin_user",
-                                types="str")
+        # mongodb: each names a key of the grant project's input variables
+        self.parse.add_optional(key="db_admin_user",
+                                types="str",
+                                default=None)
 
-        self.parse.add_required(key="db_admin_password",
-                                types="str")
+        self.parse.add_optional(key="db_admin_password",
+                                types="str",
+                                default=None)
+
+        # postgres and mysql: the target rds row's, the secret that holds the
+        # database's admin login
+        self.parse.add_optional(key="master_user_secret_arn",
+                                types="str",
+                                default=None)
 
         self.parse.add_required(key="aws_default_region",
                                 types="str")
@@ -165,11 +210,7 @@ class Main(newSchedStack):
 
         db_user = _db_user(stack)
 
-        # Record-only secret rows; the host order reads them back. No SSM copy.
-        for key in ADMIN_CREDENTIALS:
-            stack.add_secret(name=key,
-                             value=_admin_credential(stack, key),
-                             insert_ssm=False)
+        admin_login_env = _admin_login_env(stack)
 
         # The grantee's password: the secret row the host order reads, and
         # the SSM copy QHost reads back for the grantee, gone at end_time.
@@ -186,9 +227,8 @@ class Main(newSchedStack):
             "DB_LEVEL": stack.level,
             "DB_USER": db_user,
             "DB_PASSWORD": f"secret:::{PASSWORD_SECRET}",
+            **admin_login_env,
         }
-        for key, env_name in ADMIN_CREDENTIALS.items():
-            env_vars[env_name] = f"secret:::{key}"
 
         stack.add_groups_to_host(display=True,
                                  human_description=f"Create database user {db_user} on {stack.db_endpoint}",

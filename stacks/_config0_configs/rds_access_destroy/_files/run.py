@@ -5,22 +5,18 @@ The grant project's destroy anchor runs this stack (saas-api
 generic callback_delete ones: parallel_ids names the one grant schedule. A
 host order has no destroy of its own, so this stack first runs the
 rds-access-user script group with METHOD=destroy on the same host, which drops
-the grant's database user (a missing user is done). The admin credentials are
-the grant run's own sealed secret rows, read through secret_refs by the grant
-schedule id; the removal needs no input variables. When an admin row is
-missing but the grant's access_grant row exists, the removal fails loud: that
-row is written only after the create script ran, so a drop is owed. When the
-access_grant row is absent too the drop is skipped: the create never reached
-the host, or an earlier removal already dropped the user and deleted the
-rows. Then, exactly as
+the grant's database user. The script logs on with the admin login it reads
+from the secret master_user_secret_arn names, the grant's persistent argument,
+so the removal needs no input variables and no sealed row. A missing user is
+done, so every removal places the drop, a retry included. Then, exactly as
 callback_delete does, delete_resources_by_time removes the Terraform-backed
 role and the access_grant row, delete_schedules removes the schedules, and the
-final callback removes the project's SaaS traces. The drop runs first because
-the generic delete also removes the secret rows it reads.
+final callback removes the project's SaaS traces.
 
-With keep_database_user true (a removal whose drop cannot log on) no drop
-order is placed: the database user stays, and the run logs a warning naming
-it; the rest of the removal runs as usual.
+With keep_database_user true (a removal whose drop cannot log on: the
+database, the host or the secret is gone) no drop order is placed: the
+database user stays, and the run logs a warning naming it; the rest of the
+removal runs as usual.
 
 Names follow the CON-11 contract (ops work-log
 2026-09-24/con-11-access-requests/contract.md, sections 1 and 2b).
@@ -28,17 +24,15 @@ Names follow the CON-11 contract (ops work-log
 
 import json
 
-# The admin credential secret rows the grant run sealed, and their env names.
-ADMIN_CREDENTIALS = {
-    "db_admin_user": "DB_ADMIN_USER",
-    "db_admin_password": "DB_ADMIN_PASSWORD",
-}
 
-
-def _drop_user(stack, grant_schedule_id, db_user):
-    """Run the script group with METHOD=destroy on the grant's host, reading
-    the grant run's sealed admin secrets by the grant schedule id, and wait
-    for it before the generic delete."""
+def _drop_user(stack, db_user):
+    """Run the script group with METHOD=destroy on the grant's host, logging
+    on with the login in the secret master_user_secret_arn names, and wait for
+    it before the generic delete."""
+    if not stack.get_attr("master_user_secret_arn"):
+        raise ValueError(f"master_user_secret_arn is missing from the grant's arguments: "
+                         f"database user {db_user} stays on {stack.db_endpoint}; only a "
+                         f"removal with keep_database_user can leave it")
     env_vars = {
         "METHOD": "destroy",
         "DB_ENGINE": stack.db_engine,
@@ -47,16 +41,12 @@ def _drop_user(stack, grant_schedule_id, db_user):
         "DB_NAME": stack.db_name,
         "DB_LEVEL": stack.level,
         "DB_USER": db_user,
+        "DB_MASTER_USER_SECRET_ARN": stack.master_user_secret_arn,
     }
-    secret_refs = {}
-    for key, env_name in ADMIN_CREDENTIALS.items():
-        env_vars[env_name] = f"secret:::{key}"
-        secret_refs[env_name] = {"name": key, "source": "resource", "schedule_id": grant_schedule_id}
 
     stack.add_groups_to_host(display=True,
                              human_description=f"Drop database user {db_user} on {stack.db_endpoint}",
                              env_vars=json.dumps(env_vars),
-                             secret_refs=secret_refs,
                              hostname=stack.host,
                              install_name=stack.install_name,
                              groups=stack.db_user_group)
@@ -81,8 +71,9 @@ def run(stackargs):
     stack.parse.add_optional(key="parallel",
                              default="true")
 
-    # A removal whose drop cannot log on (a wrong or changed admin password)
-    # passes keep_database_user: no drop order, and the user stays.
+    # A removal whose drop cannot log on (the database, the host or the
+    # secret is gone) passes keep_database_user: no drop order, and the user
+    # stays.
     stack.parse.add_optional(key="keep_database_user",
                              types="bool",
                              default="false")
@@ -114,6 +105,12 @@ def run(stackargs):
     stack.parse.add_required(key="install_name",
                              types="str")
 
+    # The secret that holds the database's admin login. Read only by a
+    # removal that drops the user, so keep_database_user works without it.
+    stack.parse.add_optional(key="master_user_secret_arn",
+                             types="str",
+                             default=None)
+
     stack.add_hostgroups("config0-hub:::aws::rds-access-user",
                          "db_user_group")
 
@@ -126,7 +123,6 @@ def run(stackargs):
 
     if len(stack.parallel_ids) != 1:
         raise ValueError(f"parallel_ids must name the one grant schedule, got {stack.parallel_ids}")
-    (grant_schedule_id,) = stack.parallel_ids
 
     db_user = f"c0_{stack.grant_id[:16]}"
 
@@ -134,24 +130,7 @@ def run(stackargs):
         stack.logger.warning(f"keep_database_user: database user {db_user} stays on "
                              f"{stack.db_endpoint}; no drop order is placed")
     else:
-        sealed = {row["name"] for row in stack.get_resource(resource_type="secret",
-                                                            ref_schedule_id=grant_schedule_id,
-                                                            overlay_tfstate=False)}
-        missing = sorted(set(ADMIN_CREDENTIALS) - sealed)
-        if not missing:
-            _drop_user(stack, grant_schedule_id, db_user)
-        elif stack.get_resource(resource_type="access_grant",
-                                ref_schedule_id=grant_schedule_id,
-                                overlay_tfstate=False):
-            # The access_grant row is written only after the create script
-            # ran, so a drop is owed and a missing admin row cannot skip it.
-            raise ValueError(f"sealed admin secret row(s) {missing} missing on grant schedule "
-                             f"{grant_schedule_id} while its access_grant row exists: database "
-                             f"user {db_user} stays on {stack.db_endpoint}; only a removal with "
-                             f"keep_database_user can leave it")
-        # Neither an admin row nor the access_grant row: the create never
-        # reached the host, or an earlier removal already dropped the user and
-        # its generic delete took the rows, so a retry converges.
+        _drop_user(stack, db_user)
 
     # From here on, callback_delete's chain.
     ref_schedule_ids = stack.parallel_ids[:]

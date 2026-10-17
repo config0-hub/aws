@@ -26,14 +26,15 @@ class _BuildSpecs:
         self._init_buildspecs()
 
     def _init_buildspecs(self):
-        try:
+        # The *_hash buildspec parts are optional: unset means the default.
+        if self.stack.get_attr("ssm_params_hash"):
             self.ssm_params = self.stack.b64_decode(self.stack.ssm_params_hash)
-        except Exception:
+        else:
             self.ssm_params = {}
 
-        try:
+        if self.stack.get_attr("prebuild_hash"):
             self.prebuild = self.stack.b64_decode(self.stack.prebuild_hash)
-        except Exception:
+        else:
             self.prebuild = self._default_prebuild()
 
         if self.stack.get_attr("build_hash"):
@@ -43,9 +44,9 @@ class _BuildSpecs:
         elif self.stack.get_attr("docker_registry") == "dockerhub":
             self.build = self._default_dockerhub()
 
-        try:
+        if self.stack.get_attr("postbuild_hash"):
             self.postbuild = self.stack.b64_decode(self.stack.postbuild_hash)
-        except Exception:
+        else:
             self.postbuild = self._default_postbuild()
 
     def _add_build_lines(self, lines):

@@ -16,10 +16,23 @@
 #   DB_NAME            the database the level's privileges apply to
 #   DB_LEVEL           connect, read_only or read_write
 #   DB_USER            the grant's database user, c0_<16 hex of the grant id>
-#   DB_ADMIN_USER      the admin user; a secret, never printed
-#   DB_ADMIN_PASSWORD  the admin password; a secret, never printed
+#   DB_MASTER_USER_SECRET_ARN
+#                      the ARN of the Secrets Manager secret where RDS keeps
+#                      the database's master user name and password
+#
+# The admin login is that secret's JSON username and password. RDS rotates
+# it every seven days, so the script reads it on every run and keeps it in
+# shell variables only. The password reaches the client only in the client's
+# environment. The username does too on postgres (PGUSER); the mysql client
+# has no username environment variable on Linux, so on mysql the username is
+# on the client's command line (--user). No file, log or output carries the
+# login.
 #
 # Sources:
+#   "get-secret-value" (AWS CLI, Secrets Manager); "Password management with
+#   Amazon RDS and AWS Secrets Manager",
+#   https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html
+#   (the secret's ARN, rds!db-<id>, and rotation every seven days)
 #   "Creating a database account using IAM authentication",
 #   https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.DBAccounts.html
 #   (MariaDB and MySQL: CREATE USER ... IDENTIFIED WITH AWSAuthenticationPlugin
@@ -44,7 +57,24 @@ fail() {
     exit 1
 }
 
-for name in METHOD DB_ENGINE DB_ENDPOINT DB_PORT DB_NAME DB_LEVEL DB_USER DB_ADMIN_USER DB_ADMIN_PASSWORD; do
+# Sets DB_ADMIN_USER and DB_ADMIN_PASSWORD from the secret. The region is the
+# ARN's fourth field. printf is a builtin, so the value never reaches a
+# command line.
+read_admin_login() {
+    local rest region login
+    rest="${DB_MASTER_USER_SECRET_ARN#arn:aws:secretsmanager:}"
+    region="${rest%%:*}"
+    if ! login="$(aws secretsmanager get-secret-value --region "$region" \
+            --secret-id "$DB_MASTER_USER_SECRET_ARN" --query SecretString --output text)"; then
+        fail "could not read the admin login from $DB_MASTER_USER_SECRET_ARN"
+    fi
+    if ! DB_ADMIN_USER="$(printf '%s' "$login" | python3 -c 'import json, sys; print(json.load(sys.stdin)["username"])')" \
+            || ! DB_ADMIN_PASSWORD="$(printf '%s' "$login" | python3 -c 'import json, sys; print(json.load(sys.stdin)["password"])')"; then
+        fail "the secret $DB_MASTER_USER_SECRET_ARN holds no username and password"
+    fi
+}
+
+for name in METHOD DB_ENGINE DB_ENDPOINT DB_PORT DB_NAME DB_LEVEL DB_USER DB_MASTER_USER_SECRET_ARN; do
     [[ -n "${!name:-}" ]] || fail "$name is required"
 done
 
@@ -158,6 +188,9 @@ mysql_create() {
 mysql_destroy() {
     echo "DROP USER IF EXISTS '$DB_USER'@'%';" | mysql_admin
 }
+
+# Before any install: a secret the host cannot read fails in seconds.
+read_admin_login
 
 case "$DB_ENGINE" in
     postgres) install_client psql postgresql-client ;;
