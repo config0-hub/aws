@@ -15,10 +15,21 @@
 #   DB_NAME            the database the level's role applies to
 #   DB_LEVEL           read or read_write
 #   DB_USER            the grant role's ARN, arn:aws:iam::<account>:role/config0-access-<grant id>
-#   DB_ADMIN_USER      the primary user; a secret, never printed
-#   DB_ADMIN_PASSWORD  the primary user's password; a secret, never printed
+#   DB_MASTER_USER_SECRET_ARN
+#                      the ARN of the Secrets Manager secret where DocumentDB
+#                      keeps the cluster's primary user name and password
+#
+# The admin login is that secret's JSON username and password. DocumentDB
+# rotates it every seven days, so the script reads it on every run, keeps it
+# in shell variables only and hands it to mongosh in mongosh's environment:
+# no file, log or output carries it.
 #
 # Sources:
+#   "get-secret-value" (AWS CLI, Secrets Manager); "Password management with
+#   Amazon DocumentDB and AWS Secrets Manager",
+#   https://docs.aws.amazon.com/documentdb/latest/developerguide/docdb-secrets-manager.html
+#   (rotation every seven days; DocumentDB runs on the RDS management API,
+#   which names a cluster's secret rds!cluster-<id>)
 #   "Authentication using IAM identity" (Amazon DocumentDB),
 #   https://docs.aws.amazon.com/documentdb/latest/developerguide/iam-identity-auth.html
 #   (instance-based clusters 5.0; connect as the primary user, then in
@@ -44,7 +55,24 @@ fail() {
     exit 1
 }
 
-for name in METHOD DB_ENDPOINT DB_PORT DB_NAME DB_LEVEL DB_USER DB_ADMIN_USER DB_ADMIN_PASSWORD; do
+# Sets DB_ADMIN_USER and DB_ADMIN_PASSWORD from the secret. The region is the
+# ARN's fourth field. printf is a builtin, so the value never reaches a
+# command line.
+read_admin_login() {
+    local rest region login
+    rest="${DB_MASTER_USER_SECRET_ARN#arn:aws:secretsmanager:}"
+    region="${rest%%:*}"
+    if ! login="$(aws secretsmanager get-secret-value --region "$region" \
+            --secret-id "$DB_MASTER_USER_SECRET_ARN" --query SecretString --output text)"; then
+        fail "could not read the admin login from $DB_MASTER_USER_SECRET_ARN"
+    fi
+    if ! DB_ADMIN_USER="$(printf '%s' "$login" | python3 -c 'import json, sys; print(json.load(sys.stdin)["username"])')" \
+            || ! DB_ADMIN_PASSWORD="$(printf '%s' "$login" | python3 -c 'import json, sys; print(json.load(sys.stdin)["password"])')"; then
+        fail "the secret $DB_MASTER_USER_SECRET_ARN holds no username and password"
+    fi
+}
+
+for name in METHOD DB_ENDPOINT DB_PORT DB_NAME DB_LEVEL DB_USER DB_MASTER_USER_SECRET_ARN; do
     [[ -n "${!name:-}" ]] || fail "$name is required"
 done
 
@@ -81,6 +109,9 @@ install_mongosh() {
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 CA_FILE="$workdir/global-bundle.pem"
+
+# Before any install: a secret the host cannot read fails in seconds.
+read_admin_login
 
 install_mongosh
 curl -fsS --retry 3 -o "$CA_FILE" "$CA_BUNDLE_URL"

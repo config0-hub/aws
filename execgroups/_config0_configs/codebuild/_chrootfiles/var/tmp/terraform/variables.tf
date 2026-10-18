@@ -26,11 +26,6 @@ variable "s3_bucket_output" {
   type        = string
 }
 
-variable "s3_bucket_cache" {
-  description = "The S3 bucket where build cache will be stored"
-  type        = string
-}
-
 variable "cloud_tags" {
   description = "Additional tags as a map to apply to all resources"
   type        = map(string)

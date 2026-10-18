@@ -39,16 +39,16 @@ provider "aws" {
 }
 
 # Terraform Version Configuration
-# Specifies the required Terraform and provider versions
 terraform {
-  # Minimum Terraform version required
-  required_version = ">= 1.1.0"
+  # cloudposse/codebuild/aws 2.0.2 needs OpenTofu or Terraform >= 1.3
+  required_version = ">= 1.3"
 
-  # Required providers with version constraints
   required_providers {
     aws = {
-      source  = "hashicorp/aws" # AWS provider source
-      version = "~> 5.0"        # Compatible with AWS provider v5.x
+      source = "hashicorp/aws"
+      # cloudposse/codebuild/aws 2.0.2 needs >= 5.0. No lock file pins the
+      # provider, so init resolves the newest release that satisfies this.
+      version = ">= 5.0"
     }
   }
 }

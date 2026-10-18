@@ -64,15 +64,15 @@ env:
     AWS_ACCOUNT_ID: ${aws_account_id}
     S3_BUCKET: ${s3_bucket}
 '''
-        if not self.ssm_params:
-            return
-
-        self.contents = self.contents + ' '*2 + 'parameter-store:'
-        self.contents = self.contents + "\n"
-
-        for key, value in self.ssm_params.items():
-            self.contents = self.contents + ' '*4 + f'{key}: {value}'
+        # parameter-store is optional; phases: is not. Returning before it left
+        # a buildspec with no phases whenever ssm_params_hash was absent.
+        if self.ssm_params:
+            self.contents = self.contents + ' '*2 + 'parameter-store:'
             self.contents = self.contents + "\n"
+
+            for key, value in self.ssm_params.items():
+                self.contents = self.contents + ' '*4 + f'{key}: {value}'
+                self.contents = self.contents + "\n"
 
         self.contents = self.contents + 'phases:'
 
@@ -95,10 +95,16 @@ env:
         if self.stack.get_attr("docker_registry") == "ecr":
             lines.append('aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com')
 
+        # One $: the buildspec is base64-decoded and placeholder-replaced by the
+        # execgroup, never rendered as a Terraform template, so $$ reaches the
+        # shell and expands to its PID, clobbering the COMMIT_HASH the
+        # trigger-codebuild Lambda passes in.
         lines.append(
-            'export COMMIT_HASH=$${COMMIT_HASH:=$CODEBUILD_RESOLVED_SOURCE_VERSION}')
+            'export COMMIT_HASH=${COMMIT_HASH:=$CODEBUILD_RESOLVED_SOURCE_VERSION}')
         lines.append('mkdir -p ~/.ssh')
-        lines.append('echo $SSH_KEY | base64 -d > ~/.ssh/id_rsa')
+        # SSH_KEY is the parameter-store value of /ec2/keypair/<key_pair_id>:
+        # the PEM as EC2 stored it, not base64.
+        lines.append('printf \'%s\\n\' "$SSH_KEY" > ~/.ssh/id_rsa')
         lines.append('chmod 600 ~/.ssh/id_rsa')
         lines.append('eval "$(ssh-agent -s)"')
         lines.append('mkdir -p $code_dir')
@@ -182,10 +188,6 @@ def run(stackargs):
                              tags="tfvar,db",
                              types="str")
 
-    stack.parse.add_required(key="s3_bucket_cache",
-                             tags="tfvar,db",
-                             types="str")
-
     stack.parse.add_required(key="s3_bucket_output",
                              tags="tfvar,db",
                              types="str")
@@ -246,6 +248,8 @@ def run(stackargs):
                              types="str")
 
     stack.parse.add_optional(key="docker_registry",
+                             choices=["ecr", "dockerhub"],
+                             default="ecr",
                              types="str")
 
     stack.parse.add_optional(key="aws_default_region",
@@ -253,17 +257,19 @@ def run(stackargs):
                              tags="tfvar,resource,db,tf_exec_env",
                              types="str")
 
+    # VPC placement: all three or none. Unset is None, never the string "null",
+    # which is truthy in the rewrite and reached Terraform as vpc_id = "null".
     stack.parse.add_optional(key="subnet_ids",
-                             default="null")
+                             default=None)
 
     stack.parse.add_optional(key="vpc_id",
-                             default="null",
+                             default=None,
                              tags="tfvar,db",
                              types="str")
 
-    stack.parse.add_required(key="security_group_id",
-                             default="null",
-                             tags="tfvar,db",
+    stack.parse.add_optional(key="security_group_id",
+                             default=None,
+                             tags="db",
                              types="str")
 
     # Add execgroup
@@ -312,11 +318,14 @@ def run(stackargs):
     stack.set_variable("timeout", 1800)
 
     # use the terraform constructor
+    # the codebuild execgroup's module (cloudposse/codebuild/aws 2.0.2) needs
+    # OpenTofu >= 1.3; 1.11.14 is the newest 1.11 release.
     tf = TFConstructor(stack=stack,
                        provider="aws",
                        execgroup_name=stack.tf_execgroup.name,
                        resource_name=stack.codebuild_name,
-                       resource_type="aws_codebuild")
+                       resource_type="aws_codebuild",
+                       tf_runtime="tofu:1.11.14")
 
     tf.include(values={
         "aws_default_region": stack.aws_default_region,
@@ -326,7 +335,8 @@ def run(stackargs):
 
     tf.output(keys=["service_role",
                     "environment",
-                    "arn"])
+                    "arn",
+                    "project_name"])
 
     # finalize the tf_executor
     stack.tf_executor.insert(display=True,

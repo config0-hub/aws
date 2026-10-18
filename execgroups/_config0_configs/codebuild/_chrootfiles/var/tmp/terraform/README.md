@@ -1,84 +1,75 @@
-# AWS CodeBuild Project Module
+# AWS CodeBuild project (execgroup `codebuild`)
 
-This module provisions an AWS CodeBuild project with associated IAM roles and permissions, optimized for CI/CD pipelines.
+Makes one CodeBuild project for the CodeBuild CI family (Linear CON-101) through the
+community module `cloudposse/codebuild/aws`, pinned to `2.0.2`. The module makes the
+project, its IAM service role and the role's policies. The project has `NO_SOURCE`:
+the CI's `trigger-codebuild` Lambda hands it the packaged commit in S3 at
+`start_build` time, and the inline buildspec (rendered by the `aws_codebuild` stack
+and passed base64-encoded as `buildspec_hash`) clones nothing itself.
 
-## Features
+## Why this module
 
-- Creates a CodeBuild project with configurable build specifications
-- Sets up necessary IAM roles and policies
-- Configures S3 buckets for artifacts, logs, and cache
-- Supports VPC networking configuration
-- Customizable environment variables and build environment settings
+Decided 2026-10-17 (research comment on CON-101). `terraform-aws-modules`, the
+organisation behind the vpc and rds modules, publishes no CodeBuild module. Of the
+registry's CodeBuild modules only Cloud Posse's makes every resource this execgroup
+made by hand before: the IAM role and policy, a project with `source_type` and an
+inline `buildspec`, an S3 cache (on a bucket the module makes; it cannot use an
+existing bucket, see below), `vpc_config`, `logs_config` with both CloudWatch and S3
+logs, and environment variables. `lgallard/codebuild/aws` and
+`SPHTech-Platform/codebuild/aws` make the project only. Cloud Posse's repository was
+last pushed 2026-02-17.
 
-## Usage
+Two module behaviours are pinned down here on purpose:
 
-```hcl
-module "codebuild" {
-  source = "path/to/module"
+- `label_value_case = "none"` so the project (and role) keep `codebuild_name` exactly
+  as given; the module's label would lowercase it otherwise.
+- `default_permissions_enabled = false` with `custom_policy` carrying this execgroup's
+  own statements, so the module's broad default statements never apply. The module
+  still adds its own cache-bucket policy for the S3 cache.
+- `cache_type = "S3"` with no `s3_cache_bucket_name`: the module makes the cache bucket
+  (its label plus a random suffix, `force_destroy = true`, objects expire after
+  `cache_expiration_days`, 7 by default) and destroys it with the project. Given an
+  existing bucket instead, the module's cache policy renders `Resource = ["", "/*"]`,
+  which IAM rejects (Cloud Posse issue #148), so the project could never apply.
 
-  codebuild_name    = "my-project-build"
-  s3_bucket         = "my-build-artifacts-bucket"
-  s3_bucket_output  = "my-build-output-bucket"
-  s3_bucket_cache   = "my-build-cache-bucket"
-  buildspec_hash    = base64encode(file("${path.module}/buildspec.yml"))
-  
-  # Optional configurations
-  build_timeout     = "15"
-  build_image       = "aws/codebuild/amazonlinux2-x86_64-standard:3.0"
-  compute_type      = "BUILD_GENERAL1_MEDIUM"
-  
-  codebuild_env_vars = {
-    ENVIRONMENT = "dev"
-    DEBUG       = "true"
-  }
-  
-  # VPC configuration (optional)
-  vpc_id              = "vpc-12345678"
-  subnet_ids          = ["subnet-12345678", "subnet-87654321"]
-  security_group_ids  = ["sg-12345678"]
-  
-  cloud_tags = {
-    Environment = "Development"
-    Project     = "MyApp"
-  }
-}
-```
+## Runtime
+
+`required_version >= 1.3` and `hashicorp/aws >= 5.0` are the module's floors. No lock
+file ships with this execgroup: `tofu init` resolves the provider at run time (the
+2026-10-16 rule: any Terraform or OpenTofu version runs). The `aws_codebuild` stack
+names `tofu:1.11.14`.
+
+Validated 2026-10-17 with `tofu 1.11.14` and `terraform 1.11.4`, each
+`init -backend=false` then `validate`.
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| aws_default_region | The AWS region where resources will be created | string | "eu-west-1" | no |
-| build_image | The Docker image to use for the CodeBuild project | string | "aws/codebuild/standard:5.0" | no |
-| image_type | The type of build environment to use for related builds | string | "LINUX_CONTAINER" | no |
-| s3_bucket | The S3 bucket where build artifacts and logs will be stored | string | n/a | yes |
-| s3_bucket_output | The S3 bucket where build output artifacts will be stored | string | n/a | yes |
-| s3_bucket_cache | The S3 bucket where build cache will be stored | string | n/a | yes |
-| cloud_tags | Additional tags as a map to apply to all resources | map(string) | {} | no |
-| codebuild_name | The name of the CodeBuild project | string | n/a | yes |
-| codebuild_env_vars | Environmental variables for the CodeBuild project | map(string) | {} | no |
-| privileged_mode | Whether to enable running the Docker daemon inside a Docker container | bool | true | no |
-| description | Description of the CodeBuild project | string | "Codebuild project" | no |
-| build_timeout | Number of minutes, from 5 to 480 (8 hours), for AWS CodeBuild to wait until timing out any build | string | "5" | no |
-| compute_type | Compute resources the build project will use | string | "BUILD_GENERAL1_SMALL" | no |
-| buildspec_hash | Buildspec template as a base64 hash | string | n/a | yes |
-| vpc_id | The VPC ID where the CodeBuild project will run | string | null | no |
-| subnet_ids | The subnet IDs where the CodeBuild project will run | list(string) | null | no |
-| security_group_ids | The security group IDs to apply to the CodeBuild project | list(string) | null | no |
+| aws_default_region | Region the project is created in | string | "eu-west-1" | no |
+| codebuild_name | Project name; also the IAM role name | string | n/a | yes |
+| description | Project description | string | "Codebuild project" | no |
+| buildspec_hash | The inline buildspec, base64-encoded | string | n/a | yes |
+| s3_bucket | Bucket for the S3 build logs (`<bucket>/codebuild/logs`) | string | n/a | yes |
+| s3_bucket_output | Bucket the build writes its output to (role policy only) | string | n/a | yes |
+| build_image | Build image | string | "aws/codebuild/standard:5.0" | no |
+| image_type | Environment type | string | "LINUX_CONTAINER" | no |
+| compute_type | Compute size | string | "BUILD_GENERAL1_SMALL" | no |
+| privileged_mode | Docker-in-Docker | bool | true | no |
+| build_timeout | Minutes, 5 to 480 | number | 5 | no |
+| codebuild_env_vars | Plaintext environment variables | map(string) | {} | no |
+| vpc_id, subnet_ids, security_group_ids | VPC placement; all three or none | string, list(string), list(string) | null | no |
+| cloud_tags | Tags merged onto every resource | map(string) | {} | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| service_role | The ARN of the IAM service role created for the CodeBuild project |
-| environment | The environment configuration of the CodeBuild project |
-| arn | The ARN of the CodeBuild project |
-
-## Notes
-
-- Make sure your buildspec.yml is properly formatted according to [AWS documentation](https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html)
-- The IAM role created has permissions for logs, EC2, ECR, SNS, SSM, and S3 operations
-- VPC configuration is optional but required if you need to access resources in a VPC
+| arn | ARN of the CodeBuild project |
+| project_name | Name of the CodeBuild project |
+| cache_bucket_name | Name of the S3 cache bucket the module made |
+| service_role | ARN of the IAM service role |
+| environment | The build environment as given: compute_type, image, type, privileged_mode |
 
 ## License
 

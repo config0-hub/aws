@@ -10,7 +10,6 @@ This stack creates and configures an AWS CodeBuild project with customizable env
 | Name | Description | Default |
 |------|-------------|---------|
 | s3_bucket | S3 bucket name | &nbsp; |
-| s3_bucket_cache | S3 bucket name for caching | &nbsp; |
 | s3_bucket_output | S3 bucket name for outputs | &nbsp; |
 | codebuild_name | CodeBuild project name | &nbsp; |
 | security_group_id | Security group ID | null |
