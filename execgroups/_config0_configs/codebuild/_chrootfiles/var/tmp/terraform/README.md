@@ -2,10 +2,17 @@
 
 Makes one CodeBuild project for the CodeBuild CI family (Linear CON-101) through the
 community module `cloudposse/codebuild/aws`, pinned to `2.0.2`. The module makes the
-project, its IAM service role and the role's policies. The project has `NO_SOURCE`:
-the CI's `trigger-codebuild` Lambda hands it the packaged commit in S3 at
-`start_build` time, and the inline buildspec (rendered by the `aws_codebuild` stack
-and passed base64-encoded as `buildspec_hash`) clones nothing itself.
+project, its IAM service role and the role's policies. The project has `NO_SOURCE`, and
+the CI's `trigger-codebuild` Lambda passes no source at `start_build` either, so every
+build starts in an empty workspace. The inline buildspec (rendered by the `aws_codebuild`
+stack and passed base64-encoded as `buildspec_hash`) clones the repository itself in
+`pre_build`: it writes the deploy key to `~/.ssh/id_rsa` (CodeBuild pulls it from the
+buildspec's `parameter-store` entry `SSH_KEY`, the SSM parameter `/ec2/keypair/<key_pair_id>`
+EC2 keeps for the key pair), then `git init`, `git remote add origin $GIT_URL` (a project
+environment variable), `git fetch` and `git checkout -f $COMMIT_HASH`, the commit the
+Lambda passes as a build environment variable. A repository that ships its own
+`buildspec.yml` gets that file as the `buildspecOverride` instead, and fetching the code
+is that buildspec's job.
 
 ## Why this module
 
