@@ -33,6 +33,9 @@
 #   Amazon RDS and AWS Secrets Manager",
 #   https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-secrets-manager.html
 #   (the secret's ARN, rds!db-<id>, and rotation every seven days)
+#   "Installing or updating to the latest version of the AWS CLI",
+#   https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+#   (the officially supported snap: snap install aws-cli --classic)
 #   "Creating a database account using IAM authentication",
 #   https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.IAMDBAuth.DBAccounts.html
 #   (MariaDB and MySQL: CREATE USER ... IDENTIFIED WITH AWSAuthenticationPlugin
@@ -57,11 +60,20 @@ fail() {
     exit 1
 }
 
+# Ubuntu 24.04 ships no AWS CLI and has no awscli package, so a host without
+# aws installs AWS's snap.
+install_aws_cli() {
+    command -v aws >/dev/null && return 0
+    command -v snap >/dev/null || fail "aws is missing and this host has no snap to install aws-cli"
+    snap install aws-cli --classic
+}
+
 # Sets DB_ADMIN_USER and DB_ADMIN_PASSWORD from the secret. The region is the
 # ARN's fourth field. printf is a builtin, so the value never reaches a
 # command line.
 read_admin_login() {
     local rest region login
+    install_aws_cli
     rest="${DB_MASTER_USER_SECRET_ARN#arn:aws:secretsmanager:}"
     region="${rest%%:*}"
     if ! login="$(aws secretsmanager get-secret-value --region "$region" \
@@ -189,7 +201,8 @@ mysql_destroy() {
     echo "DROP USER IF EXISTS '$DB_USER'@'%';" | mysql_admin
 }
 
-# Before any install: a secret the host cannot read fails in seconds.
+# Before the database client's install: a secret the host cannot read fails
+# before any apt-get run. Only the AWS CLI the read needs comes first.
 read_admin_login
 
 case "$DB_ENGINE" in

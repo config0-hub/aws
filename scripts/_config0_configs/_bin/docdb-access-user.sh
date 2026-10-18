@@ -30,6 +30,9 @@
 #   https://docs.aws.amazon.com/documentdb/latest/developerguide/docdb-secrets-manager.html
 #   (rotation every seven days; DocumentDB runs on the RDS management API,
 #   which names a cluster's secret rds!cluster-<id>)
+#   "Installing or updating to the latest version of the AWS CLI",
+#   https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+#   (the officially supported snap: snap install aws-cli --classic)
 #   "Authentication using IAM identity" (Amazon DocumentDB),
 #   https://docs.aws.amazon.com/documentdb/latest/developerguide/iam-identity-auth.html
 #   (instance-based clusters 5.0; connect as the primary user, then in
@@ -55,11 +58,20 @@ fail() {
     exit 1
 }
 
+# Ubuntu 24.04 ships no AWS CLI and has no awscli package, so a host without
+# aws installs AWS's snap.
+install_aws_cli() {
+    command -v aws >/dev/null && return 0
+    command -v snap >/dev/null || fail "aws is missing and this host has no snap to install aws-cli"
+    snap install aws-cli --classic
+}
+
 # Sets DB_ADMIN_USER and DB_ADMIN_PASSWORD from the secret. The region is the
 # ARN's fourth field. printf is a builtin, so the value never reaches a
 # command line.
 read_admin_login() {
     local rest region login
+    install_aws_cli
     rest="${DB_MASTER_USER_SECRET_ARN#arn:aws:secretsmanager:}"
     region="${rest%%:*}"
     if ! login="$(aws secretsmanager get-secret-value --region "$region" \
@@ -110,7 +122,8 @@ workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
 CA_FILE="$workdir/global-bundle.pem"
 
-# Before any install: a secret the host cannot read fails in seconds.
+# Before mongosh's install: a secret the host cannot read fails before any
+# apt-get run. Only the AWS CLI the read needs comes first.
 read_admin_login
 
 install_mongosh
