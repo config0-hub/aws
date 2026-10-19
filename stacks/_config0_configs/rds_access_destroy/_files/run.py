@@ -171,4 +171,4 @@ def run(stackargs):
 
     stack.add_project_delete_callback()
 
-    return stack.get_results(None)
+    return stack.get_results()
