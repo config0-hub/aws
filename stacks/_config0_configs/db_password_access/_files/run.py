@@ -2,8 +2,8 @@
 generated password for one grantee, on an engine with no IAM authentication.
 
 One grant is one internal project, c0-access-<grant id>, and this stack runs
-once for it, in two jobs. The create job generates the password, seals it as
-this schedule's secret row with an SSM copy that expires at end_time, and runs
+once for it, in two jobs. The create job generates the password, writes it
+permanently to the user's Parameter Store with a path-only secret row, and runs
 the db-password-access-user script group on an existing host in the
 database's VPC, through the ssm_ec2_exec install install_name selects. The
 script creates the user c0_<first 16 hex of the grant id> with that password
@@ -19,12 +19,10 @@ The admin login, by engine. postgres and mysql are an RDS database:
 master_user_secret_arn is the target rds row's, the Secrets Manager secret
 where RDS keeps the master user name and password and rotates them every
 seven days, and the host script reads the login from it on every run, so
-Config0 seals none. mongodb: the admin credentials arrive as input-variable
-selectors, never literals: db_admin_user and db_admin_password each name a
-key of the grant project's resolved input variables, and the stack seals both
-values as this schedule's record-only secret rows. The host order reads them
-and the password by secret:::<name>, so no order row or log carries a
-credential.
+Config0 copies none. mongodb: db_admin_user and db_admin_password each name
+a key of the grant project's resolved input variables. The stack passes those
+values plainly in the host order's env. Only the generated grant password
+uses secret:::<name> to read its permanent SSM parameter.
 
 Names and row fields follow the CON-11 contract (ops work-log
 2026-09-24/con-11-access-requests/contract.md, section 2b). No engine expires
@@ -33,9 +31,8 @@ the user is dropped only when the grant is removed, by
 db_password_access_destroy on the same host; nothing here deletes one.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 import json
-import math
 import re
 import secrets
 import string
@@ -45,7 +42,7 @@ TARGET_KIND = "db_password"
 GRANT_ID_RE = re.compile(r"^[0-9a-f]{32}\Z")
 END_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
-# The admin credential arguments and the secret each is sealed as (mongodb).
+# The input-variable key arguments and their MongoDB host env names.
 ADMIN_CREDENTIALS = {
     "db_admin_user": "DB_ADMIN_USER",
     "db_admin_password": "DB_ADMIN_PASSWORD",
@@ -55,7 +52,7 @@ ADMIN_CREDENTIALS = {
 # secret master_user_secret_arn names.
 RDS_ENGINES = ("postgres", "mysql")
 
-# The grant user's password: the secret it is sealed as, its length, and
+# The grant user's password: its permanent SSM secret name, its length, and
 # its alphabet, the [a-z0-9] the db-password-access-user script checks.
 PASSWORD_SECRET = "db_password"
 PASSWORD_SIZE = 32
@@ -73,14 +70,7 @@ def _check_grant(stack):
         raise ValueError(f'db_name must not contain "%", got "{stack.db_name}"')
 
 
-def _minutes_until(end_time):
-    """Whole minutes from now until end_time, rounded up, so the stored copy
-    of the password expires with the grant. add_secret refuses a value that is
-    not positive: a grant already ended stores nothing."""
-    end = datetime.strptime(end_time, END_TIME_FORMAT).replace(tzinfo=UTC)
-    return math.ceil((end - datetime.now(UTC)).total_seconds() / 60)
-
-
+# DUP-128ad001: twin in aws/stacks/_config0_configs/db_password_access_destroy/_files/run.py
 def _admin_credential(stack, key):
     """The value the argument ``key`` selects from the grant project's
     resolved input variables. The error never echoes the argument: a literal
@@ -104,18 +94,12 @@ def _check_master_user_secret_arn(stack):
 
 
 def _admin_login_env(stack):
-    """The host order's admin login env vars. An RDS database: the ARN of the
-    secret the script reads the login from, nothing sealed. mongodb: the
-    input-variable selectors' values, sealed as record-only secret rows (no
-    SSM copy) that the host order reads back."""
+    """Pass the RDS secret ARN or the resolved MongoDB admin login to the host."""
     if stack.db_engine in RDS_ENGINES:
         _check_master_user_secret_arn(stack)
         return {"DB_MASTER_USER_SECRET_ARN": stack.master_user_secret_arn}
-    for key in ADMIN_CREDENTIALS:
-        stack.add_secret(name=key,
-                         value=_admin_credential(stack, key),
-                         insert_ssm=False)
-    return {env_name: f"secret:::{key}" for key, env_name in ADMIN_CREDENTIALS.items()}
+    # DUP-128ad002: twin in aws/stacks/_config0_configs/db_password_access_destroy/_files/run.py
+    return {env_name: _admin_credential(stack, key) for key, env_name in ADMIN_CREDENTIALS.items()}
 
 
 def _draw_password():
@@ -167,7 +151,7 @@ class Main(newSchedStack):
                                 types="str")
 
         # selects the ssm_ec2_exec_eventbridge install the host order runs
-        # through, and the install whose KMS key seals the secrets
+        # through, and whose KMS key seals the host package
         self.parse.add_required(key="install_name",
                                 types="str")
 
@@ -212,11 +196,10 @@ class Main(newSchedStack):
 
         admin_login_env = _admin_login_env(stack)
 
-        # The grantee's password: the secret row the host order reads, and
-        # the SSM copy QHost reads back for the grantee, gone at end_time.
+        # The permanent SSM parameter is read by the host order and QHost.
+        # QHost refuses issuance at end_time; explicit removal deletes it.
         stack.add_secret(name=PASSWORD_SECRET,
-                         value=_draw_password(),
-                         expire_mins=_minutes_until(stack.end_time))
+                         value=_draw_password())
 
         env_vars = {
             "METHOD": "create",

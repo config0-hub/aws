@@ -55,8 +55,8 @@
 #   mongosh calls connect with --tlsAllowInvalidCertificates, and so does this.
 #
 # Idempotent: create keeps an existing user, resets its password and
-# re-applies its grants, so a re-run's newly sealed password is the one that
-# works; destroy treats a missing user as done. No engine expires the user:
+# re-applies its grants, so a re-run's password in Parameter Store is the one
+# that works; destroy treats a missing user as done. No engine expires the user:
 # QHost stops handing the password out at the grant's end time, and the user
 # is dropped only when the grant is removed. Any failure exits non-zero. The
 # passwords go to the clients on stdin or in the environment, never on a
@@ -127,7 +127,7 @@ case "$DB_LEVEL" in
     *) fail "DB_LEVEL must be read or read_write, got $DB_LEVEL" ;;
 esac
 
-# The admin login: on mongodb the grant run's sealed secrets, in the
+# The admin login: on mongodb the resolved input-variable values, in the
 # environment; on postgres and mysql, an RDS database, the secret
 # DB_MASTER_USER_SECRET_ARN names, read before the database client's install
 # so a secret the host cannot read fails before any apt-get run. Only the AWS
