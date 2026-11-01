@@ -50,5 +50,10 @@ terraform {
       source  = "hashicorp/aws" # AWS provider source
       version = "~> 5.0"        # Compatible with AWS provider v5.x
     }
+    # The instance profile's propagation wait (main.tf).
+    time = {
+      source  = "hashicorp/time"
+      version = "0.13.1"
+    }
   }
 }

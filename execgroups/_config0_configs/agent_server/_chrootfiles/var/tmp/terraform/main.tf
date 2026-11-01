@@ -7,7 +7,8 @@
 locals {
   name = "agent-server-${var.hostname}"
 
-  # The named key sets only, never the input-variable prefix. The region is a
+  # The named sets only, never the input-variable prefix: the key sets, and
+  # tailscale_join with Tailscale on, never tailscale_admin. The region is a
   # wildcard, as aws-account-access names the /config0 parameters.
   key_parameter_arns = [
     for path in split(",", var.key_parameter_paths) :
@@ -73,6 +74,16 @@ resource "aws_iam_instance_profile" "server" {
   tags = var.cloud_tags
 }
 
+# IAM propagates a new instance profile and role policy in seconds, not at
+# once. An instance launched straight after them misses its credentials at
+# boot, and its SSM agent then backs off for about half an hour (CON-131 phase
+# 2 acceptance). The instance waits here; the user data covers what is left.
+resource "time_sleep" "instance_profile" {
+  create_duration = "30s"
+
+  depends_on = [aws_iam_instance_profile.server, aws_iam_role_policy.server]
+}
+
 resource "aws_security_group" "server" {
   name        = local.name
   description = "agent_server ${var.hostname}: inbound only on port 22 from ssh_cidr, when set"
@@ -112,9 +123,24 @@ resource "aws_instance" "server" {
   associate_public_ip_address = var.public_subnet
   key_name                    = var.ssh_key_name
 
+  # Every server: wait for the instance-profile credentials, then restart the
+  # SSM agent so it registers now. With Tailscale, the boot join follows: the
+  # parameter path and names only, never a secret.
+  user_data = join("", [
+    file("${path.module}/ssm_agent_register.sh"),
+    var.tailscale_join_parameter_path == null ? "" : templatefile("${path.module}/tailscale_join.sh", {
+      region              = data.aws_region.current.name
+      join_parameter_path = var.tailscale_join_parameter_path
+      tailscale_tag       = var.tailscale_tag
+      hostname            = var.hostname
+    }),
+  ])
+
   subnet_id              = var.subnet_id
   vpc_security_group_ids = [aws_security_group.server.id]
   iam_instance_profile   = aws_iam_instance_profile.server.name
+
+  depends_on = [time_sleep.instance_profile]
 
   root_block_device {
     delete_on_termination = true

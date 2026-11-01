@@ -29,8 +29,16 @@ class Main(newSchedStack):
     server exists. The port 22 option first uploads a key pair through
     `ec2_ssh_upload`, from the SSH set's `public_key` in stack.inputvars.
 
-    `notify_success` records the server's addon record only when the add-on
-    route set the identity; `notify_failure` reports a failed run through
+    With Tailscale on, the server joins the customer's tailnet at first boot:
+    its instance role reads the `tailscale_join` set by name, and its user
+    data carries the parameter path, never a secret. After the server order,
+    a `tailscale_device` substack order reads the device with the
+    `tailscale_admin` client from stack.inputvars; its row is newer than the
+    server row, so delete a server deletes the device first.
+
+    `notify_success` copies the device's Tailscale fields onto the server row
+    and records the server's addon record only when the add-on route set the
+    identity; `notify_failure` reports a failed run through
     `config0 gitops notify`. Delete a server is the add-on project's
     `callback_delete` destroy, which never walks this stack's jobs, so no job
     has an `on_delete` edge.
@@ -39,6 +47,12 @@ class Main(newSchedStack):
     # The add-on whose servers this stack records (provisional), the
     # ai_workflows_install stack's ADDON. A server's key adds its hostname.
     ADDON = "ai_workflows"
+
+    # The tailscale_admin set's keys, which tailscale_device passes as ssm_obj.
+    TAILSCALE_ADMIN_KEYS = ("TAILSCALE_OAUTH_CLIENT_ID", "TAILSCALE_OAUTH_CLIENT_SECRET")
+
+    # The device fields notify_success copies onto the server row.
+    TAILSCALE_DEVICE_KEYS = ("tailscale_hostname", "tailscale_tag", "tailscale_node_id")
 
     def __init__(self, stackargs):
         newSchedStack.__init__(self, stackargs)
@@ -112,6 +126,27 @@ class Main(newSchedStack):
                                 default="CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_API_KEY,OPENAI_API_KEY",
                                 types="str")
 
+        # Tailscale, off by default; the add-on route turns it on. On, the
+        # instance role also reads the join set by name and the server joins
+        # at boot. The admin set reaches stack orders only, through the
+        # reference row saas-api writes on the schedule; the join set is never
+        # a reference.
+        self.parse.add_optional(key="tailscale_enabled",
+                                default="false",
+                                types="bool")
+
+        self.parse.add_optional(key="tailscale_join_set_name",
+                                default="tailscale_join",
+                                types="str")
+
+        self.parse.add_optional(key="tailscale_admin_set_name",
+                                default="tailscale_admin",
+                                types="str")
+
+        self.parse.add_optional(key="tailscale_tag",
+                                default="tag:config0",
+                                types="str")
+
         # The server row's labels_lifetime (provisional): a selection
         # convention, permanent for the add-on's servers.
         self.parse.add_required(key="lifetime",
@@ -131,6 +166,7 @@ class Main(newSchedStack):
 
         self.stack.add_substack('config0-hub:::config0_core::tf_executor')
         self.stack.add_substack('config0-hub:::aws::ec2_ssh_upload')
+        self.stack.add_substack('config0-hub:::aws::tailscale_device')
 
         self.stack.init_execgroups()
         self.stack.init_substacks()
@@ -154,25 +190,57 @@ class Main(newSchedStack):
 
         return hashlib.md5(f"addon:{self._addon_key()}".encode()).hexdigest()
 
-    def _key_parameter_paths(self):
-        """The SSM paths of the named key sets, comma-delimited for the tfvar.
-
-        Each name is one input variable set at /config0/{owner_id}/inputvars/
-        {name}; a name that could widen the grant fails loud.
-        """
+    def _inputvars_path(self, name):
+        """One input variable set's SSM path, /config0/{owner_id}/inputvars/{name}."""
         import os
 
         owner_id = os.environ.get("CONFIG0_OWNER_ID")
         if not owner_id:
             raise ValueError("CONFIG0_OWNER_ID environment variable is required")
+        return f"/config0/{owner_id}/inputvars/{name}"
 
-        names = [name.strip() for name in self.stack.key_set_names.split(",")]
-        for name in names:
+    def _key_parameter_paths(self):
+        """The SSM paths of the named sets the instance role reads, comma-delimited for the tfvar.
+
+        The key sets, and the join set with Tailscale on. A name that could
+        widen the grant fails loud, and so does the admin set: the instance
+        role never reads it.
+        """
+        stack = self.stack
+
+        names = [("key_set_names", name.strip()) for name in stack.key_set_names.split(",")]
+        if stack.tailscale_enabled:
+            names.append(("tailscale_join_set_name", stack.tailscale_join_set_name))
+        for argument, name in names:
             if not name or any(char in name for char in "*?/"):
                 raise ValueError(
-                    f"key_set_names must name each key set, never a prefix or pattern: {name!r}"
+                    f"{argument} must name each set, never a prefix or pattern: {name!r}"
                 )
-        return ",".join(f"/config0/{owner_id}/inputvars/{name}" for name in names)
+            if name == stack.tailscale_admin_set_name:
+                raise ValueError(
+                    f"{argument} names the admin set {name}; the instance role never reads it"
+                )
+        return ",".join(self._inputvars_path(name) for _, name in names)
+
+    def _set_tailscale_boot(self):
+        """Tailscale on: the boot join's tfvars, after checking the admin client.
+
+        The admin keys are checked before any order, so a server never stands
+        joined with no device order that could delete its device.
+        """
+        stack = self.stack
+
+        for key in self.TAILSCALE_ADMIN_KEYS:
+            if not stack.inputvars.get(key):
+                raise ValueError(
+                    f"input variable set {stack.tailscale_admin_set_name} has no {key}"
+                )
+
+        stack.set_variable("tailscale_join_parameter_path",
+                           self._inputvars_path(stack.tailscale_join_set_name),
+                           tags="tfvar",
+                           types="str")
+        stack.parse.tag_key(key="tailscale_tag", tags="tfvar")
 
     def _insert_key_pair(self):
         """The port 22 option: upload the key pair, then open 22 to the CIDR.
@@ -216,6 +284,9 @@ class Main(newSchedStack):
                            tags="tfvar",
                            types="str")
 
+        if stack.tailscale_enabled:
+            self._set_tailscale_boot()
+
         if stack.ssh_enabled:
             self._insert_key_pair()
         elif stack.get_attr("ssh_cidr") or stack.get_attr("ssh_set_name"):
@@ -235,6 +306,10 @@ class Main(newSchedStack):
             # The add-on identity stamp: the same addon_id the server's addon
             # record carries.
             values["addon_id"] = self._addon_resource_id()
+        if stack.tailscale_enabled:
+            # On the server row from its own order, so uninstall's refusal
+            # sees it even if the device capture fails.
+            values["tailscale"] = True
         tf.include(values=values)
 
         tf.include(values={"labels": {"lifetime": stack.lifetime}})
@@ -253,7 +328,40 @@ class Main(newSchedStack):
 
         stack.tf_executor.insert(display=True, **tf.get())
 
+        if stack.tailscale_enabled:
+            # After the server order, so its row is newer than the server row.
+            stack.tailscale_device.insert(
+                display=True,
+                arguments={"hostname": stack.hostname,
+                           "tailscale_tag": stack.tailscale_tag,
+                           "admin_set_name": stack.tailscale_admin_set_name},
+                human_description=f"Capture the Tailscale device {stack.hostname}")
+
         return True
+
+    def _record_tailscale_device(self):
+        """Copy the device row's Tailscale fields onto the server row (gap G3).
+
+        Through the resource upsert, which keeps the server row's created_at,
+        so the device row stays the newer one for the newest-first destroy.
+        """
+        stack = self.stack
+
+        device = stack.get_resource(resource_type="tailscale_device",
+                                    name=stack.hostname,
+                                    ref_schedule_id=stack.schedule_id,
+                                    must_be_one=True,
+                                    overlay_tfstate=False)[0]
+        server = stack.get_resource(resource_type="server",
+                                    name=stack.hostname,
+                                    ref_schedule_id=stack.schedule_id,
+                                    must_be_one=True,
+                                    overlay_tfstate=False)[0]
+
+        # tailscale rides again as a JSON true, the value uninstall's scan matches.
+        stack.update_resource({"tailscale": True,
+                               **{key: device[key] for key in self.TAILSCALE_DEVICE_KEYS}},
+                              **server)
 
     def _notify(self, status, error=None):
         """Emit the gitops status-producer order (`config0 gitops notify`).
@@ -283,10 +391,17 @@ class Main(newSchedStack):
             display=True)
 
     def run_notify_success(self):
-        """Write the server's addon record INLINE, only on the add-on path."""
+        """The Tailscale fields onto the server row, then the server's addon record, INLINE.
+
+        The addon record is written only on the add-on path, and last, so it
+        never stands without the server row's Tailscale fields.
+        """
         stack = self.stack
         stack.init_variables()
         stack.verify_variables()
+
+        if stack.tailscale_enabled:
+            self._record_tailscale_device()
 
         if self._addon_identity_set():
             addon_id = self._addon_resource_id()

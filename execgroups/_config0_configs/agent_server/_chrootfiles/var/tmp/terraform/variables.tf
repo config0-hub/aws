@@ -24,6 +24,18 @@ variable "key_parameter_paths" {
   type        = string
 }
 
+variable "tailscale_join_parameter_path" {
+  description = "The tailscale_join set's SSM parameter path the server reads at boot to join the tailnet (null: no Tailscale, no join in the user data)"
+  type        = string
+  default     = null
+}
+
+variable "tailscale_tag" {
+  description = "The tag the server joins the tailnet with, e.g. tag:config0 (Tailscale on only)"
+  type        = string
+  default     = null
+}
+
 variable "ssh_key_name" {
   description = "The key pair for the port 22 option (null: no key pair)"
   type        = string
