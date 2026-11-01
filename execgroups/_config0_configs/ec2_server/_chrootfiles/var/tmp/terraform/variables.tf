@@ -5,8 +5,9 @@ variable "hostname" {
 }
 
 variable "ssh_key_name" {
-  description = "Name of the SSH key pair to use for the instance"
+  description = "Name of the SSH key pair to use for the instance (null launches without one)"
   type        = string
+  default     = null
 }
 
 variable "aws_default_region" {

@@ -38,7 +38,7 @@ module "ec2_instance" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | hostname | Hostname for the EC2 instance, used in Name tag | string | n/a | yes |
-| ssh_key_name | Name of the SSH key pair to use for the instance | string | n/a | yes |
+| ssh_key_name | Name of the SSH key pair to use for the instance | string | null | no |
 | aws_default_region | AWS region where resources will be created | string | "us-east-2" | no |
 | ami | Default AMI ID to use if not using the AMI data source | string | "ami-055750c183ca68c38" | no |
 | associate_public_ip_address | Whether to associate a public IP address with the instance | bool | true | no |

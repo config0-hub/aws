@@ -32,7 +32,9 @@ def run(stackargs):
                              default="_random",
                              types="str")
 
-    stack.parse.add_required(key="ssh_key_name",
+    # Optional: a server reached over Session Manager or Tailscale has no key
+    # pair. Unset, the instance launches without one.
+    stack.parse.add_optional(key="ssh_key_name",
                              tags="tfvar",
                              types="str")
 
@@ -150,9 +152,8 @@ def run(stackargs):
     # random element for subnet_id
     if stack.get_attr("subnet_ids"):
         avail_subnets = stack.to_list(stack.subnet_ids)
-        subnet_element = random.randrange(len(avail_subnets) - 1)
         stack.set_variable("subnet_id",
-                           avail_subnets[subnet_element],
+                           random.choice(avail_subnets),
                            tags="tfvar,db",
                            types="str")
 

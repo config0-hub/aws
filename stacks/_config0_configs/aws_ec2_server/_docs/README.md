@@ -10,12 +10,12 @@ This stack creates an AWS EC2 instance with an optional EBS volume attachment. I
 | Name | Description | Default |
 |------|-------------|---------|
 | hostname | Server hostname | _random |
-| ssh_key_name | Name label for SSH key | &nbsp; |
 
 ### Optional Variables
 
 | Name | Description | Default |
 |------|-------------|---------|
+| ssh_key_name | Name label for SSH key; unset launches without a key pair | &nbsp; |
 | ami_filter | AMI filter criteria | ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-* |
 | ami_owner | AMI owner ID | 099720109477 |
 | instance_type | EC2 instance type | t3.micro |
