@@ -24,6 +24,17 @@ variable "key_parameter_paths" {
   type        = string
 }
 
+variable "done_prefix" {
+  description = "The server's own done-marker prefix in the hub tmp bucket, s3://<bucket>/executions/agent/<hostname>/; the instance role may put objects under it only"
+  type        = string
+}
+
+variable "artifact_prefix" {
+  description = "The customer's bucket prefix, s3://<bucket>/<prefix>/, the server reads its briefs from and writes artifacts under (null: no artifact grant, the server takes no order)"
+  type        = string
+  default     = null
+}
+
 variable "tailscale_join_parameter_path" {
   description = "The tailscale_join set's SSM parameter path the server reads at boot to join the tailnet (null: no Tailscale, no join in the user data)"
   type        = string
@@ -82,4 +93,38 @@ variable "cloud_tags" {
   description = "Additional tags as a map to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+variable "daemon_pkg_url" {
+  description = "The presigned link to the runner daemon zip saas-api answers the agent_server run; the user data fetches it once, at first boot"
+  type        = string
+}
+
+variable "prune_age_days" {
+  description = "The runner daemon's worktree pruning age in days (CONFIG0_AGENT_PRUNE_AGE_DAYS)"
+  type        = number
+}
+
+variable "max_concurrent" {
+  description = "The orders the runner daemon runs at once (null: one per two vCPUs)"
+  type        = number
+  default     = null
+}
+
+variable "claude_version" {
+  description = "The Claude Code release npm installs (@anthropic-ai/claude-code); the daemon needs 2.1.277 or later"
+  type        = string
+  default     = "2.1.316"
+}
+
+variable "pi_package" {
+  description = "The npm package of the pi coding agent CLI"
+  type        = string
+  default     = "@earendil-works/pi-coding-agent"
+}
+
+variable "pi_version" {
+  description = "The pi release npm installs; the daemon's event contract is pi 0.99.x"
+  type        = string
+  default     = "0.99.2"
 }

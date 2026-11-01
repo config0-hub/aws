@@ -29,6 +29,12 @@ class Main(newSchedStack):
     server exists. The port 22 option first uploads a key pair through
     `ec2_ssh_upload`, from the SSH set's `public_key` in stack.inputvars.
 
+    Every server runs the runner daemon (provisional). The run asks saas-api
+    for the presigned daemon link (`stack.get_daemon_link()`), and the user
+    data fetches it once at first boot, installs the two agent CLIs and the
+    daemon, and starts it on the server's own queue. Later boots start the
+    installed copy; delete and re-add a server to take a newer release.
+
     With Tailscale on, the server joins the customer's tailnet at first boot:
     its instance role reads the `tailscale_join` set by name, and its user
     data carries the parameter path, never a secret. After the server order,
@@ -126,6 +132,24 @@ class Main(newSchedStack):
                                 default="CLAUDE_CODE_OAUTH_TOKEN,ANTHROPIC_API_KEY,OPENAI_API_KEY",
                                 types="str")
 
+        # The customer's bucket prefix, s3://<bucket>/<prefix>/, the server
+        # reads its briefs from and writes each order's artifacts under. FIRE
+        # refuses an order whose artifact prefix lies outside it. Unset, the
+        # server's only grant is its done prefix, so it takes no order.
+        self.parse.add_optional(key="artifact_prefix",
+                                types="str")
+
+        # The runner daemon's worktree pruning age, in days (design A3).
+        self.parse.add_optional(key="prune_age_days",
+                                default=7,
+                                tags="tfvar",
+                                types="int")
+
+        # The orders the daemon runs at once. Unset, it runs one per two vCPUs.
+        self.parse.add_optional(key="max_concurrent",
+                                tags="tfvar",
+                                types="int")
+
         # Tailscale, off by default; the add-on route turns it on. On, the
         # instance role also reads the join set by name and the server joins
         # at boot. The admin set reaches stack orders only, through the
@@ -220,7 +244,25 @@ class Main(newSchedStack):
                 raise ValueError(
                     f"{argument} names the admin set {name}; the instance role never reads it"
                 )
-        return ",".join(self._inputvars_path(name) for _, name in names)
+        return [self._inputvars_path(name) for _, name in names]
+
+    def _done_prefix(self):
+        """The server's own done-marker prefix in the hub tmp bucket.
+
+        The bucket the run publisher's WATCH reads, as host orders use it;
+        the submit order's fire pass puts each done endpoint under it
+        (config0_cli ``handlers/agent_submit.py`` ``done_prefix``).
+        """
+        return f"s3://{self.stack.tmp_bucket}/executions/agent/{self.stack.hostname}/"
+
+    def _artifact_prefix(self):
+        """The artifact prefix argument, or None; an s3:// prefix ending in /."""
+        prefix = self.stack.get_attr("artifact_prefix")
+        if not prefix:
+            return None
+        if not prefix.startswith("s3://") or "/" not in prefix[len("s3://"):] or any(c in prefix for c in "*?"):
+            raise ValueError(f"artifact_prefix must be s3://<bucket>/<prefix>, never a pattern: {prefix!r}")
+        return prefix.rstrip("/") + "/"
 
     def _set_tailscale_boot(self):
         """Tailscale on: the boot join's tfvars, after checking the admin client.
@@ -279,10 +321,22 @@ class Main(newSchedStack):
         stack.init_variables()
         stack.verify_variables()
 
+        key_parameter_paths = self._key_parameter_paths()
         stack.set_variable("key_parameter_paths",
-                           self._key_parameter_paths(),
+                           ",".join(key_parameter_paths),
                            tags="tfvar",
                            types="str")
+
+        artifact_prefix = self._artifact_prefix()
+        stack.set_variable("done_prefix",
+                           self._done_prefix(),
+                           tags="tfvar",
+                           types="str")
+        if artifact_prefix:
+            stack.set_variable("artifact_prefix",
+                               artifact_prefix,
+                               tags="tfvar",
+                               types="str")
 
         if stack.tailscale_enabled:
             self._set_tailscale_boot()
@@ -292,15 +346,25 @@ class Main(newSchedStack):
         elif stack.get_attr("ssh_cidr") or stack.get_attr("ssh_set_name"):
             raise ValueError("ssh_cidr and ssh_set_name need ssh_enabled")
 
+        # The presigned daemon link, minted for this run; the user data fetches it once.
+        stack.set_variable("daemon_pkg_url",
+                           stack.get_daemon_link(),
+                           tags="tfvar",
+                           types="str")
+
         tf = TFConstructor(stack=stack,
                            execgroup_name=stack.tf_execgroup.name,
                            provider="aws",
                            resource_name=stack.hostname,
                            resource_type="server")
 
+        # The grants FIRE checks an order against (gap G4), as lists on the
+        # row: the artifact prefix and the done prefix, and the named sets.
         values = {
             "aws_default_region": stack.aws_default_region,
             "hostname": stack.hostname,
+            "artifact_prefixes": [prefix for prefix in (artifact_prefix, self._done_prefix()) if prefix],
+            "key_parameter_paths": key_parameter_paths,
         }
         if self._addon_identity_set():
             # The add-on identity stamp: the same addon_id the server's addon

@@ -14,6 +14,10 @@ locals {
     for path in split(",", var.key_parameter_paths) :
     "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter${path}"
   ]
+
+  # s3://<bucket>/<prefix>/ as the object ARN pattern under that prefix.
+  done_objects     = "arn:aws:s3:::${trimprefix(var.done_prefix, "s3://")}*"
+  artifact_objects = var.artifact_prefix == null ? [] : ["arn:aws:s3:::${trimprefix(var.artifact_prefix, "s3://")}*"]
 }
 
 resource "aws_iam_role" "server" {
@@ -38,7 +42,7 @@ resource "aws_iam_role_policy" "server" {
   role = aws_iam_role.server.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
+    Statement = concat([
       {
         Sid    = "SessionManagerChannels"
         Effect = "Allow"
@@ -63,7 +67,23 @@ resource "aws_iam_role_policy" "server" {
         Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage"]
         Resource = aws_sqs_queue.server.arn
       },
-    ]
+      # The done marker, first write only, under the server's own done prefix.
+      {
+        Sid      = "WriteOwnDoneMarkers"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = local.done_objects
+      },
+      ], length(local.artifact_objects) == 0 ? [] : [
+      # The briefs the fire pass writes, and the diff, event log and result
+      # the daemon uploads, all under the artifact prefix.
+      {
+        Sid      = "ReadBriefsWriteArtifacts"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = local.artifact_objects
+      },
+    ])
   })
 }
 
@@ -124,10 +144,21 @@ resource "aws_instance" "server" {
   key_name                    = var.ssh_key_name
 
   # Every server: wait for the instance-profile credentials, then restart the
-  # SSM agent so it registers now. With Tailscale, the boot join follows: the
+  # SSM agent so it registers now; then install and start the runner daemon
+  # from the presigned link. With Tailscale, the boot join follows: the
   # parameter path and names only, never a secret.
   user_data = join("", [
     file("${path.module}/ssm_agent_register.sh"),
+    templatefile("${path.module}/agent_runner_boot.sh", {
+      daemon_pkg_url = var.daemon_pkg_url
+      queue_url      = aws_sqs_queue.server.url
+      region         = data.aws_region.current.name
+      prune_age_days = var.prune_age_days
+      max_concurrent = var.max_concurrent
+      claude_version = var.claude_version
+      pi_package     = var.pi_package
+      pi_version     = var.pi_version
+    }),
     var.tailscale_join_parameter_path == null ? "" : templatefile("${path.module}/tailscale_join.sh", {
       region              = data.aws_region.current.name
       join_parameter_path = var.tailscale_join_parameter_path
@@ -157,6 +188,13 @@ resource "aws_instance" "server" {
   )
 
   lifecycle {
+    # Every agent_server run asks for a new daemon link, so user_data differs
+    # on every rerun, and the provider applies a user_data change by stopping
+    # and starting the instance, which kills a running daemon. cloud-init runs
+    # user data at the first boot only anyway: a later change (the link, a
+    # Tailscale toggle) takes a delete and re-add of the server.
+    ignore_changes = [user_data]
+
     precondition {
       condition     = var.public_subnet || length(local.nat_egress_routes) > 0
       error_message = "Subnet ${var.subnet_id} has no NAT egress: its route table ${data.aws_route_table.server.route_table_id} has no 0.0.0.0/0 default route to a NAT gateway, NAT instance or other egress target (an internet gateway route does not count for a private subnet). Config0 creates no NAT gateway. Add NAT egress to the VPC's routing, or choose a public subnet with the public-subnet option."
