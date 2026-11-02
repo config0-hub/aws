@@ -37,6 +37,11 @@ ADAPTER_KEY_SETS = {
 }
 
 
+def per_run_hostname(run_id):
+    """Per-run server hostname: ai- plus the run id with underscores as hyphens."""
+    return f"ai-{run_id.replace('_', '-')}"
+
+
 def check_call(stack):
     """Refuse at emission what the daemon would refuse after the brief is written.
 
@@ -188,7 +193,13 @@ def run(stackargs):
     check_call(stack)
     tasks = parse_tasks(stack.tasks)
 
-    hostname = f"ai-{stack.run_id}"
+    hostname = per_run_hostname(stack.run_id)
+    # agent_server names the instance role agent-server-<hostname>, and IAM caps
+    # a role name at 64 characters: refused here, before the server, not in Terraform.
+    role_name = f"agent-server-{hostname}"
+    if len(role_name) > 64:
+        raise ValueError(f"the per-run server's role name {role_name} is {len(role_name)} characters; "
+                         "IAM allows at most 64, so the run id may be at most 48")
 
     # The exact named reads of the submit orders, nothing wider.
     key_set_names = [stack.key_set_name]

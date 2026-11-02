@@ -74,7 +74,8 @@ composition may also run it, without the add-on identity.
 - The instance: the `ec2_server` execgroup's AMI read and root disk; no public address
   unless `public_subnet`; the key pair only with port 22.
 - User data on every server, in order: `ssm_agent_register.sh` (wait for the instance-profile
-  credentials, restart the SSM agent); `agent_runner_boot.sh` through `templatefile` (Node 22
+  credentials, restart the SSM agent); `agent_runner_boot.sh` through `templatefile` (the OS
+  hostname set to `hostname` with `hostnamectl set-hostname`, Node 22
   from NodeSource, `claude` and `pi` pinned by `claude_version`, `pi_package` and `pi_version`,
   the one fetch of the daemon link, `install.sh` with the queue URL, region, pruning age and
   `max_concurrent`); then, with Tailscale on, the join below. The instance ignores later

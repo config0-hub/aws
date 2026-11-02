@@ -7,6 +7,10 @@
 # release. No secret lives here. Never add set -x.
 set -euo pipefail
 
+# The OS hostname is the server's hostname argument, so the daemon's logs carry
+# the name on the server row. cloud-init keeps a hostname changed after its own.
+hostnamectl set-hostname "${hostname}"
+
 # First-boot apt timers can hold the dpkg lock, so apt waits for it.
 echo 'DPkg::Lock::Timeout "300";' > /etc/apt/apt.conf.d/90config0-lock-timeout
 apt-get update

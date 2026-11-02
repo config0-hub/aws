@@ -144,12 +144,13 @@ resource "aws_instance" "server" {
   key_name                    = var.ssh_key_name
 
   # Every server: wait for the instance-profile credentials, then restart the
-  # SSM agent so it registers now; then install and start the runner daemon
-  # from the presigned link. With Tailscale, the boot join follows: the
-  # parameter path and names only, never a secret.
+  # SSM agent so it registers now; then set the OS hostname and install and
+  # start the runner daemon from the presigned link. With Tailscale, the boot
+  # join follows: the parameter path and names only, never a secret.
   user_data = join("", [
     file("${path.module}/ssm_agent_register.sh"),
     templatefile("${path.module}/agent_runner_boot.sh", {
+      hostname       = var.hostname
       daemon_pkg_url = var.daemon_pkg_url
       queue_url      = aws_sqs_queue.server.url
       region         = data.aws_region.current.name

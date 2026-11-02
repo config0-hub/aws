@@ -35,6 +35,12 @@ ADAPTER_KEY_SETS = {
     "pi": ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"),
 }
 
+
+def per_run_hostname(run_id):
+    """Per-run server hostname: ai- plus the run id with underscores as hyphens."""
+    return f"ai-{run_id.replace('_', '-')}"
+
+
 # What a review call's task result must carry (design J2).
 REVIEW_RESULT_KEYS = ("score", "findings")
 
@@ -220,7 +226,13 @@ def run(stackargs):
     # ai_task's own checks, before the server exists (ai_task repeats them).
     check_calls(stack)
 
-    hostname = f"ai-{stack.run_id}"
+    hostname = per_run_hostname(stack.run_id)
+    # agent_server names the instance role agent-server-<hostname>, and IAM caps
+    # a role name at 64 characters: refused here, before the server, not in Terraform.
+    role_name = f"agent-server-{hostname}"
+    if len(role_name) > 64:
+        raise ValueError(f"the per-run server's role name {role_name} is {len(role_name)} characters; "
+                         "IAM allows at most 64, so the run id may be at most 48")
 
     # The exact named reads of the work and review submit orders, nothing wider.
     key_set_names = [stack.key_set_name]
