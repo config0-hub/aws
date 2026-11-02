@@ -1,0 +1,246 @@
+"""
+Copyright (C) 2025 Gary Leong <gary@config0.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import json
+
+# The call arguments this composition hands agent_attempts unchanged.
+CALL_ARGUMENTS = (
+    "max_attempts", "task_schema", "adapter", "model", "key_set_name",
+    "repository_url", "branch", "repository_credential_set_name",
+    "max_turns", "max_budget_usd", "artifact_prefix", "phase2complete_timeout",
+)
+
+# One entry of the tasks list: the keys it must carry and the one it may.
+TASK_KEYS = {"name", "task", "result_selector"}
+TASK_OPTIONAL_KEYS = {"acceptance_schema"}
+
+
+# The model key sets each adapter takes, named for the tool's variable: the
+# runner daemon's brief refuses any other pair (config0_agent_runner brief.py).
+ADAPTER_KEY_SETS = {
+    "claude": ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"),
+    "pi": ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"),
+}
+
+
+def check_call(stack):
+    """Refuse at emission what the daemon would refuse after the brief is written.
+
+    The daemon deletes a brief it cannot read and the order then waits out
+    its deadline, so a typo fails here, before any order or server exists.
+    Returns the parsed task schema.
+    """
+    task_schema = json.loads(stack.task_schema)
+    if not isinstance(task_schema, dict):
+        raise ValueError("task_schema must be a JSON object, a JSON Schema")
+    if stack.key_set_name not in ADAPTER_KEY_SETS[stack.adapter]:
+        raise ValueError(
+            f"{stack.adapter} takes the key set {' or '.join(ADAPTER_KEY_SETS[stack.adapter])}, "
+            f"not {stack.key_set_name!r}"
+        )
+    if not stack.repository_url.startswith("https://"):
+        raise ValueError(f"repository_url must be an https:// URL: {stack.repository_url!r}")
+    if stack.max_turns < 1 or stack.max_budget_usd <= 0:
+        raise ValueError("max_turns must be at least 1 and max_budget_usd above 0")
+    if not stack.artifact_prefix.startswith("s3://") or len(stack.artifact_prefix) <= len("s3://"):
+        raise ValueError(f"artifact_prefix must be s3://<bucket>/<prefix>: {stack.artifact_prefix!r}")
+    return task_schema
+
+
+def parse_tasks(raw):
+    """The tasks list: one object per task, each name unique in the run."""
+    tasks = json.loads(raw)
+    if not isinstance(tasks, list) or not tasks:
+        raise ValueError("tasks must be a non-empty JSON list of task objects")
+    names = []
+    for entry in tasks:
+        if not isinstance(entry, dict):
+            raise ValueError(f"each task must be a JSON object: {entry!r}")
+        missing = TASK_KEYS - entry.keys()
+        unknown = entry.keys() - TASK_KEYS - TASK_OPTIONAL_KEYS
+        if missing or unknown:
+            raise ValueError(f"task {entry.get('name')!r}: missing {sorted(missing)}, unknown {sorted(unknown)}")
+        if "acceptance_schema" in entry and not isinstance(entry["acceptance_schema"], dict):
+            raise ValueError(f"task {entry['name']!r}: acceptance_schema must be a JSON object, a JSON Schema")
+        names.append(entry["name"])
+    if len(set(names)) != len(names):
+        raise ValueError(f"task names must be unique in the run: {names}")
+    return tasks
+
+
+def run(stackargs):
+    """Bounded attempts of one or more tasks on a server that lives for this run only.
+
+    1. agent_server creates the server ai-<run id>, its queue and its role,
+       with lifetime per_run and exactly the grants of the submit orders: the
+       artifact prefix and the named sets of the model key and the
+       repository credential.
+    2. agent_attempts runs each task's attempts on that server: its own
+       attempt_groups row, one agent_call insert per attempt, then the next
+       deterministic order. One task is one insert; several tasks are
+       inserted under one parallel anchor, so their chains run side by side
+       and one group's win never cancels another's orders.
+    3. Only after every task's attempts settled, delete_resource removes the
+       server row's resources, must_exists. A task whose attempts all failed
+       fails the job, so the removal never runs and the server, its queue and
+       its role stay for the user.
+
+    Author warning: max_attempts times (phase2complete_timeout plus one
+    evaluation pass of at most 600 s), the server and the removal must fit
+    the job's archive.timeout (spec: schedule: in config0.yaml; 4800 s by
+    default), and all of it inside run_timeout.
+    """
+
+    stack = newStack(stackargs)
+
+    # The server: where it runs and what it may write.
+    stack.parse.add_required(key="subnet_id",
+                             types="str")
+
+    stack.parse.add_required(key="aws_default_region",
+                             types="str")
+
+    stack.parse.add_optional(key="instance_type",
+                             types="str")
+
+    # A JSON list: [{"name": ..., "task": ..., "result_selector": ...,
+    # "acceptance_schema": {...}}]. name is the attempt group's name and
+    # task its brief 1.
+    stack.parse.add_required(key="tasks",
+                             types="str")
+
+    stack.parse.add_optional(key="max_attempts",
+                             default=3,
+                             types="int")
+
+    # The call, as agent_call takes it.
+    stack.parse.add_required(key="task_schema",
+                             types="str")
+
+    stack.parse.add_optional(key="adapter",
+                             default="claude",
+                             choices=["claude", "pi"],
+                             types="str")
+
+    stack.parse.add_optional(key="model",
+                             types="str")
+
+    stack.parse.add_required(key="key_set_name",
+                             types="str")
+
+    stack.parse.add_required(key="repository_url",
+                             types="str")
+
+    # Empty, the daemon clones the repository's default branch.
+    stack.parse.add_optional(key="branch",
+                             default="",
+                             types="str")
+
+    stack.parse.add_optional(key="repository_credential_set_name",
+                             types="str")
+
+    stack.parse.add_required(key="max_turns",
+                             types="int")
+
+    stack.parse.add_required(key="max_budget_usd",
+                             types="float")
+
+    stack.parse.add_required(key="artifact_prefix",
+                             types="str")
+
+    # P per attempt, short enough by default that three attempts, the
+    # server and its removal fit the default 4800 s job.
+    stack.parse.add_optional(key="phase2complete_timeout",
+                             default=1200,
+                             types="int")
+
+    stack.parse.add_optional(key="run_timeout",
+                             default=7200,
+                             types="int")
+
+    stack.add_substack("config0-hub:::aws::agent_server")
+    stack.add_substack("config0-hub:::aws::agent_attempts")
+    stack.add_substack("config0-hub:::config0_core::delete_resource")
+
+    stack.init_variables()
+    stack.init_substacks()
+
+    # The calls' own checks, before the server exists (agent_call repeats them).
+    check_call(stack)
+    tasks = parse_tasks(stack.tasks)
+
+    hostname = f"ai-{stack.run_id}"
+
+    # The exact named reads of the submit orders, nothing wider.
+    key_set_names = [stack.key_set_name]
+    if stack.get_attr("repository_credential_set_name"):
+        key_set_names.append(stack.repository_credential_set_name)
+
+    server_arguments = {
+        # agent_server is a Class Helper: run its server job alone, as
+        # saas-api's per-job expansion would, never its notifiers.
+        "jobs": ["server"],
+        "hostname": hostname,
+        "subnet_id": stack.subnet_id,
+        "aws_default_region": stack.aws_default_region,
+        "artifact_prefix": stack.artifact_prefix,
+        "key_set_names": ",".join(key_set_names),
+        "lifetime": "per_run",
+    }
+    if stack.get_attr("instance_type"):
+        server_arguments["instance_type"] = stack.instance_type
+
+    stack.agent_server.insert(display=True,
+                              arguments=server_arguments,
+                              human_description=f"Create the per-run agent server {hostname}")
+
+    # The submit orders need the server row, written when its order finalizes.
+    stack.wait_all()
+
+    call_arguments = {key: stack.get_attr(key) for key in CALL_ARGUMENTS
+                      if stack.get_attr(key) is not None}
+    call_arguments["hostname"] = hostname
+
+    parallel = len(tasks) > 1
+    if parallel:
+        stack.set_parallel()
+
+    for entry in tasks:
+        arguments = {
+            **call_arguments,
+            "task_name": entry["name"],
+            "task": entry["task"],
+            "result_selector": entry["result_selector"],
+        }
+        if "acceptance_schema" in entry:
+            arguments["acceptance_schema"] = json.dumps(entry["acceptance_schema"])
+        stack.agent_attempts.insert(display=True,
+                                    arguments=arguments,
+                                    human_description=f'Attempts of "{entry["name"]}" on {hostname}')
+
+    # The removal depends on the last insert and its subtree; under the
+    # parallel anchor, on the wait row over every task's subtree.
+    if parallel:
+        stack.unset_parallel()
+
+    stack.delete_resource.insert(display=True,
+                                 arguments={"resource_type": "server",
+                                            "hostname": hostname,
+                                            "must_exists": "true"},
+                                 human_description=f"Remove the per-run agent server {hostname}")
+
+    return stack.get_results()
