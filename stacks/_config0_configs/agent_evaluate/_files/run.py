@@ -17,15 +17,21 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
 def run(stackargs):
-    """Emit one evaluation order: the deterministic verdict on one attempt (design I5).
+    """Emit one evaluation order: the deterministic verdict on one call of an attempt (design I5, J2).
 
     agent_call inserts this stack after its submit order. The order has the
     role agent/evaluate and runs one pass (config0_cli handlers/agent_evaluate.py).
-    It reads the attempt_groups row, reads the work's result and event log
-    under the attempt's artifact prefix, runs the checks finished, envelope,
-    schema, acceptance and diff, and writes the row once: evaluated with
-    outcome succeeded; attempt n+1 with brief n+1; or, on the last attempt,
-    evaluated with outcome failed, which exits non-zero.
+    It reads the attempt_groups row and the call's result and event log under
+    the call's artifact prefix, runs the deterministic checks, and writes the
+    row once.
+
+    call work, writes_evaluated yes: evaluated with outcome succeeded;
+    attempt n+1 with brief n+1; or, on the last attempt, evaluated with
+    outcome failed, which exits non-zero. call work, writes_evaluated no:
+    the outcome and the refs on attempts[n], exit 0 either way; the ask
+    order decides. call review (writes_evaluated no): the score, review_ref
+    and log_ref, only after the review's checks; a bad review writes
+    nothing and exits non-zero.
 
     retries=2 is two passes, one retry (design I7): the retry reads the row
     first, so a write that landed is never repeated.
@@ -41,16 +47,15 @@ def run(stackargs):
     stack.parse.add_required(key="attempt",
                              types="int")
 
-    # Which attempts[n] sub-entry the evaluation reads (design J). Phase 5
-    # evaluates the work call only; review is phase 6's.
+    # Which attempts[n] sub-entry the evaluation reads (design J).
     stack.parse.add_required(key="call",
-                             choices=["work"],
+                             choices=["work", "review"],
                              types="str")
 
     # yes: this order is the attempt's last order and writes evaluated.
-    # Phase 5 has no ask order, so yes is the only value.
+    # no: an ask order follows and writes it; a review is always no.
     stack.parse.add_required(key="writes_evaluated",
-                             choices=["yes"],
+                             choices=["yes", "no"],
                              types="str")
 
     # The author's rules over the task result, a JSON Schema as a JSON
@@ -59,6 +64,9 @@ def run(stackargs):
                              types="str")
 
     stack.init_variables()
+
+    if stack.call == "review" and stack.writes_evaluated == "yes":
+        raise ValueError("a review call never writes evaluated: the ask order after it does (writes_evaluated no)")
 
     overide_values = {
         "call": stack.call,
@@ -75,6 +83,6 @@ def run(stackargs):
                         attempt_group_id=stack.attempt_group_id,
                         attempt=stack.attempt,
                         display=True,
-                        human_description=f"Evaluate attempt {stack.attempt}")
+                        human_description=f"Evaluate the {stack.call} of attempt {stack.attempt}")
 
     return stack.get_results()

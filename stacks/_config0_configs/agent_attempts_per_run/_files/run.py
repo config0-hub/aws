@@ -111,6 +111,11 @@ def run(stackargs):
     stack.parse.add_required(key="subnet_id",
                              types="str")
 
+    # On: a public address and no NAT egress check, as agent_server takes it.
+    stack.parse.add_optional(key="public_subnet",
+                             default="false",
+                             types="bool")
+
     stack.parse.add_required(key="aws_default_region",
                              types="str")
 
@@ -196,6 +201,7 @@ def run(stackargs):
         "jobs": ["server"],
         "hostname": hostname,
         "subnet_id": stack.subnet_id,
+        "public_subnet": stack.public_subnet,
         "aws_default_region": stack.aws_default_region,
         "artifact_prefix": stack.artifact_prefix,
         "key_set_names": ",".join(key_set_names),

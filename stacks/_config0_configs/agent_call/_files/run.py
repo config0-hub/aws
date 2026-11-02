@@ -28,6 +28,11 @@ SUBMIT_KEYS = (
 )
 
 
+# What a review call's task result must carry: the evaluation order checks an
+# integer score from 0 to 10 and a list of findings strings (design J2).
+REVIEW_RESULT_KEYS = ("score", "findings")
+
+
 # The model key sets each adapter takes, named for the tool's variable: the
 # runner daemon's brief refuses any other pair (config0_agent_runner brief.py).
 ADAPTER_KEY_SETS = {
@@ -57,18 +62,31 @@ def check_call(stack):
         raise ValueError("max_turns must be at least 1 and max_budget_usd above 0")
     if not stack.artifact_prefix.startswith("s3://") or len(stack.artifact_prefix) <= len("s3://"):
         raise ValueError(f"artifact_prefix must be s3://<bucket>/<prefix>: {stack.artifact_prefix!r}")
+    if stack.call == "review":
+        if stack.writes_evaluated != "no":
+            raise ValueError("a review call never writes evaluated: the ask order after it does (writes_evaluated no)")
+        missing = [key for key in REVIEW_RESULT_KEYS if key not in task_schema.get("required", [])]
+        if missing:
+            raise ValueError(f"a review call's task_schema must require {list(REVIEW_RESULT_KEYS)}; missing {missing}")
     return task_schema
 
 
 def run(stackargs):
-    """Layer 1, the agent call (provisional, design J): one attempt's submit order, then its evaluation.
+    """Layer 1, the agent call (provisional, design J): one call's submit order, then its evaluation.
 
-    The body runs when this stack's exec order fires, at the attempt's turn.
+    The body runs when this stack's exec order fires, at the call's turn.
     It reads the attempt_groups row and fails loud unless the row is at this
     attempt. It emits the submit order with no task text, so the submit
     order's fire pass runs the row's current brief: brief 1, or brief n
-    that the previous evaluation order wrote. Then it inserts
-    agent_evaluate, whose order decides the attempt.
+    that the previous attempt wrote. Then it inserts agent_evaluate, whose
+    order decides the call.
+
+    call review (design J2): a second model reads the work's diff against
+    brief n, at the turn after the work's evaluation. Failed work emits
+    nothing: no model is called, and this stack's insert and exec rows
+    complete empty. Succeeded work emits the review submit order, whose fire
+    pass runs brief n plus the work's diff, then inserts agent_evaluate.
+    The review never grades its own work and never writes evaluated.
 
     Every row carries attempt_group_id and attempt: the submit order, the
     agent_evaluate insert and exec rows, and the evaluation order.
@@ -83,10 +101,17 @@ def run(stackargs):
     stack.parse.add_required(key="attempt",
                              types="int")
 
-    # Which attempts[n] sub-entry the two orders write. Phase 5 has the
-    # work call only; review is phase 6's.
+    # Which attempts[n] sub-entry the two orders write (design J).
     stack.parse.add_required(key="call",
-                             choices=["work"],
+                             choices=["work", "review"],
+                             types="str")
+
+    # yes: the evaluation order is the attempt's last and writes evaluated
+    # (layer 1 alone). no: an ask order follows and writes it; a review is
+    # always no. A string: a bare YAML yes would arrive as a boolean.
+    stack.parse.add_optional(key="writes_evaluated",
+                             default="yes",
+                             choices=["yes", "no"],
                              types="str")
 
     # The agent_result row's name: unique in the run, so one per attempt.
@@ -159,17 +184,31 @@ def run(stackargs):
 
     task_schema = check_call(stack)
 
-    # The row is at this attempt: the previous attempt's evaluation order
-    # moved it here, or this is attempt 1.
+    # The row is at this attempt: the previous attempt's last order moved it
+    # here, or this is attempt 1. A review runs after the work: in_progress.
     group = stack.get_resource(match={"_id": stack.attempt_group_id},
                                must_be_one=True,
                                overlay_tfstate=False)[0]
-    if group.get("status") not in ("queued", "in_progress") or group.get("attempt") != stack.attempt:
+    statuses = ("in_progress",) if stack.call == "review" else ("queued", "in_progress")
+    if group.get("status") not in statuses or group.get("attempt") != stack.attempt:
         raise ValueError(
             f"attempt group {stack.attempt_group_id} reads status={group.get('status')!r} "
-            f"attempt={group.get('attempt')!r}; attempt {stack.attempt}'s agent call runs only "
-            "while the group is queued or in_progress at its attempt"
+            f"attempt={group.get('attempt')!r}; attempt {stack.attempt}'s {stack.call} call runs only "
+            f"while the group is {' or '.join(statuses)} at its attempt"
         )
+
+    if stack.call == "review":
+        # The work's evaluation (writes_evaluated no) recorded its outcome.
+        outcome = next((item.get("outcome") for item in group.get("attempts") or []
+                        if item.get("attempt") == stack.attempt), None)
+        if outcome not in ("succeeded", "failed"):
+            raise ValueError(
+                f"attempt {stack.attempt} of group {stack.attempt_group_id} records no work outcome; "
+                "the work's evaluation order records it before the review call"
+            )
+        if outcome == "failed":
+            # Nothing to review: no model is called, no order is emitted.
+            return stack.get_results()
 
     overide_values = {key: stack.get_attr(key) for key in SUBMIT_KEYS if stack.get_attr(key) is not None}
     overide_values["task_schema"] = task_schema
@@ -195,13 +234,13 @@ def run(stackargs):
         "attempt": stack.attempt,
         "call": stack.call,
         # A Python string: a bare YAML yes would arrive as a boolean.
-        "writes_evaluated": "yes",
+        "writes_evaluated": stack.writes_evaluated,
     }
     if stack.get_attr("acceptance_schema"):
         evaluate_arguments["acceptance_schema"] = stack.acceptance_schema
 
     stack.agent_evaluate.insert(display=True,
                                 arguments=evaluate_arguments,
-                                human_description=f"Evaluate attempt {stack.attempt}")
+                                human_description=f"Evaluate the {stack.call} of attempt {stack.attempt}")
 
     return stack.get_results()
