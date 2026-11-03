@@ -22,6 +22,7 @@ SUBMIT_ARGUMENTS = (
     "call_name", "task", "task_schema", "adapter", "model", "key_set_name",
     "repository_url", "branch", "repository_credential_set_name",
     "max_turns", "max_budget_usd", "artifact_prefix", "phase2complete_timeout",
+    "labels",
 )
 
 
@@ -137,6 +138,10 @@ def run(stackargs):
                              types="float")
 
     stack.parse.add_required(key="artifact_prefix",
+                             types="str")
+
+    # The result row's labels, a JSON object, as agent_submit takes it.
+    stack.parse.add_optional(key="labels",
                              types="str")
 
     # P, short enough by default that the server, the park and the removal

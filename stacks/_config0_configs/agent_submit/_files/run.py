@@ -66,8 +66,10 @@ def run(stackargs):
     pass resolves the server, fixes the deadline at now plus
     phase2complete_timeout, writes the brief and sends one message to the
     server's queue. The finalize pass records one agent_result row named
-    call_name for this run. A later order reads it with a selector::: whose
-    match sets filter.resource_type agent_result and keys.name the call name.
+    call_name, carrying run_id and the labels. The row is global: a later
+    order, a later project or a later run reads it with a selector::: whose
+    match sets filter.resource_type agent_result and the labels or keys.name
+    the call name, and adds run_id when it must be this run's row.
 
     Author warning: the job's archive.timeout, phase2complete_timeout and
     every later order must fit inside run_timeout; a longer value is the
@@ -135,6 +137,11 @@ def run(stackargs):
     stack.parse.add_optional(key="server_id",
                              types="str")
 
+    # The result row's labels, a JSON object of label names to values: a
+    # reader matches the agent_result row by them.
+    stack.parse.add_optional(key="labels",
+                             types="str")
+
     # The customer's s3:// prefix the order's brief and artifacts go under,
     # inside the server's artifact_prefix grant.
     stack.parse.add_required(key="artifact_prefix",
@@ -166,6 +173,11 @@ def run(stackargs):
         if not isinstance(server_labels, dict):
             raise ValueError("server_labels must be a JSON object of label names to values")
         overide_values["server_labels"] = server_labels
+    if stack.get_attr("labels"):
+        labels = json.loads(stack.labels)
+        if not isinstance(labels, dict):
+            raise ValueError("labels must be a JSON object of label names to values")
+        overide_values["labels"] = labels
 
     stack.add_jiffy_cli(order_type="agent-server-submit::api",
                         role="agent/server/submit",
